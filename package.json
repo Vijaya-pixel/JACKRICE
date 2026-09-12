@@ -1,0 +1,20 @@
+{
+  "name": "tacit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tacit \u2014 eye-driven yes/no selection. Electron app using the Presage SmartSpectra SDK (browser fallback uses MediaPipe).",
+  "main": "main.js",
+  "scripts": {
+    "build": "esbuild renderer.js --bundle --outfile=dist/renderer.bundle.js --platform=browser --format=iife --log-level=warning && esbuild gazeWorker.js --bundle --outfile=dist/gazeWorker.bundle.js --platform=browser --format=iife --log-level=warning",
+    "start": "npm run build && electron .",
+    "setup": "node setup-mediapipe.js"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.14",
+    "@smartspectra/node-sdk": "latest"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "esbuild": "^0.25.0"
+  }
+}

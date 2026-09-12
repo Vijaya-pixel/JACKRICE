@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Presage renderer SDK runs a Web Worker from a blob: URL -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; media-src 'self' blob: mediastream:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self';">
+<title>Tacit — Yes/No selection test (Electron / Presage)</title>
+<link rel="stylesheet" href="yesno.css">
+</head>
+<body>
+
+<div id="row">
+  <div class="box" id="yes">Yes<small></small></div>
+  <div id="stage">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="overlay"></canvas>
+    <div id="lookhere">LOOK HERE</div>
+  </div>
+  <div class="box" id="no">No<small></small></div>
+</div>
+
+<div id="info">
+  <div id="calib">initializing…</div>
+  <div id="warn"></div>
+  <div>state: <span id="state">—</span> &nbsp; result: <b id="result">—</b></div>
+  <div>last event: <span id="last">—</span></div>
+  <div class="dim">source: <span id="source">—</span> &nbsp; vitals: <span id="vitals">—</span></div>
+  <div class="dim" id="eyeinfo">—</div>
+  <div>gaze: <span id="gaze">—</span> &nbsp; <span style="color:#888">ref: <span id="gazeRef">not calibrated</span></span></div>
+  <div id="bar"><div class="zone" id="zone"></div><div class="mark" id="mMid"></div><div id="dot"></div></div>
+  <div style="margin-top:8px">
+    <button id="resetBtn">Reset</button>
+    <button id="gazeCalBtn">Re-center gaze</button>
+    <button id="recalBtn">Recalibrate blink</button>
+  </div>
+</div>
+
+<script src="dist/renderer.bundle.js"></script>
+</body>
+</html>
