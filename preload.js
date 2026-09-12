@@ -10,4 +10,6 @@ contextBridge.exposeInMainWorld('tacit', {
   getApiKey: () => ipcRenderer.invoke('tacit:apiKey'),
   getGeminiSuggestions: context => ipcRenderer.invoke('tacit:geminiSuggestions', context),
   recordSelection: entry => ipcRenderer.invoke('tacit:recordSelection', entry),
+  listPatients: () => ipcRenderer.invoke('tacit:listPatients'),
+  addPatient: entry => ipcRenderer.invoke('tacit:addPatient', entry),
 });

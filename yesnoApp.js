@@ -23,7 +23,12 @@ export function initYesNo(engine, opts = {}) {
   const typePanel = $('typePanel');
   const customText = $('customText');
   const eyeTrackingToggle = $('eyeTrackingToggle');
-  const patientIdInput = $('patientId');
+  const patientSelect = $('patientSelect');
+  const newPatientBtn = $('newPatientBtn');
+  const newPatientForm = $('newPatientForm');
+  const newPatientFirstName = $('newPatientFirstName');
+  const newPatientId = $('newPatientId');
+  const addPatientBtn = $('addPatientBtn');
 
   let options = [...FALLBACK_OPTIONS, TYPE_OPTION];
   let current = 0;
@@ -33,16 +38,37 @@ export function initYesNo(engine, opts = {}) {
   let eyeTrackingEnabled = localStorage.getItem('tacit:eyeTracking') === '1';
   let lastTelemetryAt = 0;
 
-  // Patient ID is per-device state (whoever the bedside unit is set to right
-  // now), so it persists across restarts but is never baked into the app.
-  patientIdInput.value = localStorage.getItem('tacit:patientId') || '';
-
   function recordSelection(text, source, how) {
     window.tacit?.recordSelection?.({
-      patientId: patientIdInput.value.trim(),
+      patientId: patientSelect.value,
       patientContext: $('patientContext').value.trim(),
       text, source, how,
     });
+  }
+
+  // Populate the dropdown from the saved directory, keeping whichever patient
+  // is passed as preferredId selected (falls back to the last one used on
+  // this device, then to no selection).
+  async function loadPatients(preferredId) {
+    const patients = (await window.tacit?.listPatients?.()) || [];
+    const wanted = preferredId ?? localStorage.getItem('tacit:patientId') ?? '';
+    patientSelect.innerHTML = '<option value="">Select a patient...</option>';
+    for (const patient of patients) {
+      const option = document.createElement('option');
+      option.value = patient.id;
+      option.textContent = `${patient.firstName} (${patient.id})`;
+      patientSelect.appendChild(option);
+    }
+    patientSelect.value = patients.some(p => p.id === wanted) ? wanted : '';
+  }
+
+  function selectPatient(id) {
+    patientSelect.value = id;
+    localStorage.setItem('tacit:patientId', id);
+    // Switching who the device is set to shouldn't carry the previous
+    // patient's session log or board forward.
+    messageLog.innerHTML = '<li class="empty">Selections will appear here.</li>';
+    refreshSuggestions();
   }
 
   function sendTelemetry() {}
@@ -140,7 +166,7 @@ export function initYesNo(engine, opts = {}) {
   async function refreshSuggestions() {
     $('suggestionStatus').textContent = 'asking Gemini...';
     const patientContext = $('patientContext').value.trim();
-    const patientId = patientIdInput.value.trim();
+    const patientId = patientSelect.value;
     try {
       const response = await window.tacit?.getGeminiSuggestions?.({ patientContext, patientId });
       // The board is a fixed 2 x 3 grid, so top up from the fallbacks if the
@@ -330,12 +356,24 @@ export function initYesNo(engine, opts = {}) {
   $('gazeCalBtn').addEventListener('click', () => { if (engine.getState().calibration === 'done') calibrateGaze(); });
   $('recalBtn').addEventListener('click', () => engine.calibrate());
   $('refreshBtn').addEventListener('click', refreshSuggestions);
-  patientIdInput.addEventListener('change', () => {
-    localStorage.setItem('tacit:patientId', patientIdInput.value.trim());
-    // Switching who the device is set to shouldn't carry the previous
-    // patient's session log or board forward.
-    messageLog.innerHTML = '<li class="empty">Selections will appear here.</li>';
-    refreshSuggestions();
+  patientSelect.addEventListener('change', () => selectPatient(patientSelect.value));
+  newPatientBtn.addEventListener('click', () => {
+    newPatientForm.hidden = !newPatientForm.hidden;
+    if (!newPatientForm.hidden) newPatientFirstName.focus();
+  });
+  addPatientBtn.addEventListener('click', async () => {
+    const firstName = newPatientFirstName.value.trim();
+    const id = newPatientId.value.trim();
+    if (!id) { newPatientId.focus(); return; }
+    // findOrCreate: an existing ID is reused (and its name updated) rather
+    // than creating a duplicate patient.
+    const patient = await window.tacit?.addPatient?.({ id, firstName });
+    if (!patient) return;
+    newPatientFirstName.value = '';
+    newPatientId.value = '';
+    newPatientForm.hidden = true;
+    await loadPatients(patient.id);
+    selectPatient(patient.id);
   });
   $('sendCustomBtn').addEventListener('click', () => {
     const text = customText.value.trim();
@@ -350,7 +388,7 @@ export function initYesNo(engine, opts = {}) {
   });
 
   drawBoard();
-  refreshSuggestions();
+  loadPatients().then(refreshSuggestions);
 
   (async () => {
     try { await engine.start($('video')); }

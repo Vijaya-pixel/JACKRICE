@@ -104,7 +104,7 @@ h1 {
   gap: 10px;
 }
 
-.patientIdInput {
+.contextControl input, .contextControl select, .typePanel input, .patientForm input {
   width: 100%;
   border: 1px solid var(--line);
   background: #0f1215;
@@ -112,17 +112,20 @@ h1 {
   padding: 12px 14px;
 }
 
-.contextControl input, .typePanel input {
-  width: 100%;
-  border: 1px solid var(--line);
-  background: #0f1215;
-  color: var(--text);
-  padding: 12px 14px;
-}
-
-.contextControl button, .typePanel button, .buttonRow button {
+.contextControl button, .typePanel button, .buttonRow button, .patientForm button {
   min-height: 44px;
   padding: 0 14px;
+}
+
+.patientForm {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 110px;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.patientForm[hidden] {
+  display: none;
 }
 
 .hint {
@@ -381,7 +384,7 @@ h1 {
     flex-direction: column;
   }
 
-  .contextControl, .typePanel, .buttonRow {
+  .contextControl, .typePanel, .buttonRow, .patientForm {
     grid-template-columns: 1fr;
   }
 

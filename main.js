@@ -49,6 +49,7 @@ ipcMain.handle('tacit:apiKey', () => readApiKey());
 //     options are parsed exactly instead of scraped out of prose.
 //   * The key belongs in the x-goog-api-key header, not the query string.
 const geminiHistory = require('./geminiHistory');
+const patientDirectory = require('./patientDirectory');
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_DEFAULT_MODEL = 'gemini-flash-latest';
@@ -238,6 +239,10 @@ ipcMain.handle('tacit:geminiSuggestions', async (_event, context = {}) => {
 ipcMain.handle('tacit:recordSelection', (_event, entry = {}) => {
   geminiHistory.recordSelection(entry);
 });
+
+// --- Patient directory ------------------------------------------------------
+ipcMain.handle('tacit:listPatients', () => patientDirectory.listPatients());
+ipcMain.handle('tacit:addPatient', (_event, entry = {}) => patientDirectory.findOrCreatePatient(entry));
 
 function createWindow() {
   const win = new BrowserWindow({
