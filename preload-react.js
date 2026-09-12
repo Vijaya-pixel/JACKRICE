@@ -18,6 +18,22 @@ contextBridge.exposeInMainWorld('tacit', {
   addPatient: entry => ipcRenderer.invoke('tacit:addPatient', entry),
   getElevenLabsApiKey: () => ipcRenderer.invoke('tacit:elevenLabsApiKey'),
 
+  // --- Local persistence (SQLite in Electron main process) ---
+  dbListPatients: () => ipcRenderer.invoke('tacit:db:patients:list'),
+  dbCreatePatient: patient => ipcRenderer.invoke('tacit:db:patients:create', patient),
+  dbGetPatient: id => ipcRenderer.invoke('tacit:db:patients:get', id),
+  dbGetPatientByPatientId: patientId => ipcRenderer.invoke('tacit:db:patients:getByPatientId', patientId),
+  dbUpdatePatient: (id, updates) => ipcRenderer.invoke('tacit:db:patients:update', id, updates),
+  dbDeletePatient: id => ipcRenderer.invoke('tacit:db:patients:delete', id),
+  dbGetClinicalContext: patientId => ipcRenderer.invoke('tacit:db:clinicalContext:get', patientId),
+  dbSaveClinicalContext: context => ipcRenderer.invoke('tacit:db:clinicalContext:save', context),
+  dbCreateSession: session => ipcRenderer.invoke('tacit:db:sessions:create', session),
+  dbCompleteSession: (id, endedAt) => ipcRenderer.invoke('tacit:db:sessions:complete', id, endedAt),
+  dbSaveInteraction: interaction => ipcRenderer.invoke('tacit:db:interactions:save', interaction),
+  dbListInteractionsForSession: sessionId => ipcRenderer.invoke('tacit:db:interactions:listForSession', sessionId),
+  dbSaveVitalReading: reading => ipcRenderer.invoke('tacit:db:vitals:save', reading),
+  dbListVitalReadingsForSession: sessionId => ipcRenderer.invoke('tacit:db:vitals:listForSession', sessionId),
+
   // --- Engine bridge (consumer side) ---
   // Subscribe to every blink/gaze/calibration/vitals/etc. event forwarded
   // from the hidden engine-host window. Returns an unsubscribe function,

@@ -55,6 +55,7 @@ ipcMain.handle('tacit:elevenLabsApiKey', () => readElevenLabsApiKey());
 //   * The key belongs in the x-goog-api-key header, not the query string.
 const geminiHistory = require('./geminiHistory');
 const patientDirectory = require('./patientDirectory');
+const tacitDatabase = require('./tacitDatabase');
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_DEFAULT_MODEL = 'gemini-flash-latest';
@@ -250,6 +251,22 @@ ipcMain.handle('tacit:topPhrases', (_event, patientId) => geminiHistory.topPhras
 // --- Patient directory ------------------------------------------------------
 ipcMain.handle('tacit:listPatients', () => patientDirectory.listPatients());
 ipcMain.handle('tacit:addPatient', (_event, entry = {}) => patientDirectory.findOrCreatePatient(entry));
+
+// --- Local database ---------------------------------------------------------
+ipcMain.handle('tacit:db:patients:list', () => tacitDatabase.listPatients());
+ipcMain.handle('tacit:db:patients:create', (_event, patient = {}) => tacitDatabase.createPatient(patient));
+ipcMain.handle('tacit:db:patients:get', (_event, id) => tacitDatabase.getPatient(id));
+ipcMain.handle('tacit:db:patients:getByPatientId', (_event, patientId) => tacitDatabase.getPatientByPatientId(patientId));
+ipcMain.handle('tacit:db:patients:update', (_event, id, updates = {}) => tacitDatabase.updatePatient(id, updates));
+ipcMain.handle('tacit:db:patients:delete', (_event, id) => tacitDatabase.deletePatient(id));
+ipcMain.handle('tacit:db:clinicalContext:get', (_event, patientId) => tacitDatabase.getClinicalContext(patientId));
+ipcMain.handle('tacit:db:clinicalContext:save', (_event, context = {}) => tacitDatabase.saveClinicalContext(context));
+ipcMain.handle('tacit:db:sessions:create', (_event, session = {}) => tacitDatabase.createSession(session));
+ipcMain.handle('tacit:db:sessions:complete', (_event, id, endedAt) => tacitDatabase.completeSession(id, endedAt));
+ipcMain.handle('tacit:db:interactions:save', (_event, interaction = {}) => tacitDatabase.saveInteraction(interaction));
+ipcMain.handle('tacit:db:interactions:listForSession', (_event, sessionId) => tacitDatabase.listInteractionsForSession(sessionId));
+ipcMain.handle('tacit:db:vitals:save', (_event, reading = {}) => tacitDatabase.saveVitalReading(reading));
+ipcMain.handle('tacit:db:vitals:listForSession', (_event, sessionId) => tacitDatabase.listVitalReadingsForSession(sessionId));
 
 // --- Engine event relay ------------------------------------------------------
 // Hidden engine-host window -> main -> visible React window, and back for
