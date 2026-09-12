@@ -8,4 +8,5 @@ require('@smartspectra/node-sdk/preload');
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('tacit', {
   getApiKey: () => ipcRenderer.invoke('tacit:apiKey'),
+  getGeminiSuggestions: context => ipcRenderer.invoke('tacit:geminiSuggestions', context),
 });

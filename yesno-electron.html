@@ -4,36 +4,81 @@
 <meta charset="utf-8">
 <!-- Presage renderer SDK runs a Web Worker from a blob: URL -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; media-src 'self' blob: mediastream:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self';">
-<title>Tacit — Yes/No selection test (Electron / Presage)</title>
+<title>Tacit - Blink communication board</title>
 <link rel="stylesheet" href="yesno.css">
 </head>
 <body>
 
-<div id="row">
-  <div class="box" id="yes">Yes<small></small></div>
-  <div id="stage">
-    <video id="video" autoplay muted playsinline></video>
-    <canvas id="overlay"></canvas>
-    <div id="lookhere">LOOK HERE</div>
-  </div>
-  <div class="box" id="no">No<small></small></div>
-</div>
+<main id="app">
+  <section id="communication">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Tacit bedside communication</p>
+        <h1>Patient response board</h1>
+      </div>
+      <label class="toggle">
+        <input id="eyeTrackingToggle" type="checkbox">
+        <span>Eye tracking</span>
+      </label>
+    </header>
 
-<div id="info">
-  <div id="calib">initializing…</div>
-  <div id="warn"></div>
-  <div>state: <span id="state">—</span> &nbsp; result: <b id="result">—</b></div>
-  <div>last event: <span id="last">—</span></div>
-  <div class="dim">source: <span id="source">—</span> &nbsp; vitals: <span id="vitals">—</span></div>
-  <div class="dim" id="eyeinfo">—</div>
-  <div>gaze: <span id="gaze">—</span> &nbsp; <span style="color:#888">ref: <span id="gazeRef">not calibrated</span></span></div>
-  <div id="bar"><div class="zone" id="zone"></div><div class="mark" id="mMid"></div><div id="dot"></div></div>
-  <div style="margin-top:8px">
-    <button id="resetBtn">Reset</button>
-    <button id="gazeCalBtn">Re-center gaze</button>
-    <button id="recalBtn">Recalibrate blink</button>
-  </div>
-</div>
+    <div class="contextRow">
+      <label for="patientContext">Doctor or nurse context</label>
+      <div class="contextControl">
+        <input id="patientContext" type="text" placeholder="Example: post-op pain check, ALS clinic visit">
+        <button id="refreshBtn" type="button">Refresh options</button>
+      </div>
+      <div id="suggestionStatus" class="hint">fallback suggestions ready</div>
+    </div>
+
+    <div id="board" class="board" aria-label="Patient response options"></div>
+
+    <div id="typePanel" class="typePanel" hidden>
+      <input id="customText" type="text" placeholder="Type the patient's message">
+      <button id="sendCustomBtn" type="button">Send</button>
+    </div>
+
+    <section class="output">
+      <div>
+        <span class="label">Active option</span>
+        <strong id="activeChoice">-</strong>
+      </div>
+      <div>
+        <span class="label">Latest selection</span>
+        <strong id="result">-</strong>
+      </div>
+    </section>
+
+    <ol id="messageLog" class="messageLog">
+      <li class="empty">Selections will appear here.</li>
+    </ol>
+  </section>
+
+  <aside id="diagnostics">
+    <div id="stage">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div id="lookhere">LOOK HERE</div>
+    </div>
+
+    <div id="info">
+      <div id="calib">initializing...</div>
+      <div id="warn"></div>
+      <div>state: <span id="state">-</span></div>
+      <div>last event: <span id="last">-</span></div>
+      <div class="dim">source: <span id="source">-</span></div>
+      <div class="dim">vitals: <span id="vitals">-</span></div>
+      <div class="dim" id="eyeinfo">-</div>
+      <div>gaze: <span id="gaze">disabled</span> <span class="dim">ref: <span id="gazeRef">disabled</span></span></div>
+      <div id="bar"><div class="zone" id="zone"></div><div class="mark" id="mMid"></div><div id="dot"></div></div>
+      <div class="buttonRow">
+        <button id="resetBtn" type="button">Reset scan</button>
+        <button id="gazeCalBtn" type="button">Re-center gaze</button>
+        <button id="recalBtn" type="button">Recalibrate blink</button>
+      </div>
+    </div>
+  </aside>
+</main>
 
 <script src="dist/renderer.bundle.js"></script>
 </body>
