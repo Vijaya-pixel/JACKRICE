@@ -104,6 +104,14 @@ h1 {
   gap: 10px;
 }
 
+.patientIdInput {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #0f1215;
+  color: var(--text);
+  padding: 12px 14px;
+}
+
 .contextControl input, .typePanel input {
   width: 100%;
   border: 1px solid var(--line);

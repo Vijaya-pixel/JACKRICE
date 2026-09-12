@@ -23,6 +23,7 @@ export function initYesNo(engine, opts = {}) {
   const typePanel = $('typePanel');
   const customText = $('customText');
   const eyeTrackingToggle = $('eyeTrackingToggle');
+  const patientIdInput = $('patientId');
 
   let options = [...FALLBACK_OPTIONS, TYPE_OPTION];
   let current = 0;
@@ -31,6 +32,18 @@ export function initYesNo(engine, opts = {}) {
   let scanTimer = null;
   let eyeTrackingEnabled = localStorage.getItem('tacit:eyeTracking') === '1';
   let lastTelemetryAt = 0;
+
+  // Patient ID is per-device state (whoever the bedside unit is set to right
+  // now), so it persists across restarts but is never baked into the app.
+  patientIdInput.value = localStorage.getItem('tacit:patientId') || '';
+
+  function recordSelection(text, source, how) {
+    window.tacit?.recordSelection?.({
+      patientId: patientIdInput.value.trim(),
+      patientContext: $('patientContext').value.trim(),
+      text, source, how,
+    });
+  }
 
   function sendTelemetry() {}
 
@@ -119,6 +132,7 @@ export function initYesNo(engine, opts = {}) {
       customText.focus();
     } else {
       appendMessage(selected, how);
+      recordSelection(selected, 'suggested', how);
     }
     sendTelemetry({ t: 'event', cls: 'choose', text: `${selected} via ${how}` });
   }
@@ -126,8 +140,9 @@ export function initYesNo(engine, opts = {}) {
   async function refreshSuggestions() {
     $('suggestionStatus').textContent = 'asking Gemini...';
     const patientContext = $('patientContext').value.trim();
+    const patientId = patientIdInput.value.trim();
     try {
-      const response = await window.tacit?.getGeminiSuggestions?.({ patientContext });
+      const response = await window.tacit?.getGeminiSuggestions?.({ patientContext, patientId });
       // The board is a fixed 2 x 3 grid, so top up from the fallbacks if the
       // main process ever hands back fewer than five options.
       const next = [...(response?.options || []), ...FALLBACK_OPTIONS].slice(0, 5);
@@ -315,10 +330,18 @@ export function initYesNo(engine, opts = {}) {
   $('gazeCalBtn').addEventListener('click', () => { if (engine.getState().calibration === 'done') calibrateGaze(); });
   $('recalBtn').addEventListener('click', () => engine.calibrate());
   $('refreshBtn').addEventListener('click', refreshSuggestions);
+  patientIdInput.addEventListener('change', () => {
+    localStorage.setItem('tacit:patientId', patientIdInput.value.trim());
+    // Switching who the device is set to shouldn't carry the previous
+    // patient's session log or board forward.
+    messageLog.innerHTML = '<li class="empty">Selections will appear here.</li>';
+    refreshSuggestions();
+  });
   $('sendCustomBtn').addEventListener('click', () => {
     const text = customText.value.trim();
     if (!text) return;
     appendMessage(text, 'typed');
+    recordSelection(text, 'typed', 'typed');
     customText.value = '';
     startScan();
   });
