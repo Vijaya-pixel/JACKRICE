@@ -240,6 +240,8 @@ ipcMain.handle('tacit:recordSelection', (_event, entry = {}) => {
   geminiHistory.recordSelection(entry);
 });
 
+ipcMain.handle('tacit:topPhrases', (_event, patientId) => geminiHistory.topPhrases(patientId, 5));
+
 // --- Patient directory ------------------------------------------------------
 ipcMain.handle('tacit:listPatients', () => patientDirectory.listPatients());
 ipcMain.handle('tacit:addPatient', (_event, entry = {}) => patientDirectory.findOrCreatePatient(entry));

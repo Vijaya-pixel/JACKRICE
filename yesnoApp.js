@@ -1,12 +1,24 @@
 /**
- * yesnoApp.js — blink-scanned AAC communication board.
+ * yesnoApp.js — three-tier blink-scanned AAC communication board.
  *
- * The engine still owns blink calibration and blink events. This UI scans a
- * 2 x 3 board one option at a time; a deliberate blink selects the active cell.
+ * The engine still owns blink calibration and blink events. Three tiers share
+ * one blink/click "select" gesture, escalating from fastest to most flexible:
+ *   1. yesno    — Yes / No / escalate to the needs board (3-cell flat scan)
+ *   2. board    — 5 Gemini-ranked needs + escalate to the keyboard (6-cell flat scan)
+ *   3. keyboard — frequency-ordered scanning keyboard with word/phrase
+ *                 completion, for anything the first two tiers can't say
+ *
+ * Tiers 1-2 reuse the same flat linear scan (one highlighted cell at a time).
+ * Tier 3 uses two-phase row/column scanning since a flat scan over ~30 cells
+ * would be far too slow. Every cell in every tier is also a real button, so
+ * the whole flow can be driven by mouse click with no camera at all.
  */
+import { FREQUENCY_LETTERS, predictWords, chunk } from './keyboardData.js';
+
 export function initYesNo(engine, opts = {}) {
   const SCAN_INTERVAL_MS = 1500;
-  const TYPE_OPTION = 'Type yourself';
+  const KEYBOARD_OPTION = 'Keyboard';
+  const YESNO_OPTIONS = ['Yes', 'No'];
   const FALLBACK_OPTIONS = [
     'Yes',
     'No',
@@ -20,8 +32,9 @@ export function initYesNo(engine, opts = {}) {
   const overlay = $('overlay');
   const octx = overlay.getContext('2d');
   const messageLog = $('messageLog');
-  const typePanel = $('typePanel');
-  const customText = $('customText');
+  const modeYesNoBtn = $('modeYesNoBtn');
+  const modeBoardBtn = $('modeBoardBtn');
+  const modeKeyboardBtn = $('modeKeyboardBtn');
   const eyeTrackingToggle = $('eyeTrackingToggle');
   const patientSelect = $('patientSelect');
   const newPatientBtn = $('newPatientBtn');
@@ -29,12 +42,28 @@ export function initYesNo(engine, opts = {}) {
   const newPatientFirstName = $('newPatientFirstName');
   const newPatientId = $('newPatientId');
   const addPatientBtn = $('addPatientBtn');
+  const keyboardEl = $('keyboard');
+  const keyboardRowsEl = $('keyboardRows');
+  const keyboardDraftText = $('keyboardDraftText');
 
-  let options = [...FALLBACK_OPTIONS, TYPE_OPTION];
+  // --- Tier 1 / 2 shared flat-scan state --------------------------------
+  let tier = 'yesno'; // 'yesno' | 'board' | 'keyboard'
+  let boardOptions = [...FALLBACK_OPTIONS, KEYBOARD_OPTION]; // cached tier-2 board, refreshed in the background
+  let options = [...YESNO_OPTIONS];
   let current = 0;
   let chosen = null;
   let ready = false;
   let scanTimer = null;
+
+  // --- Tier 3 (keyboard) state --------------------------------------------
+  let draftText = '';
+  let keyboardRowDefs = [];
+  let historyPhrasesCache = [];
+  let kphase = 'row'; // 'row' | 'col'
+  let krow = 0;
+  let kcol = 0;
+  let keyboardTimer = null;
+
   let eyeTrackingEnabled = localStorage.getItem('tacit:eyeTracking') === '1';
   let lastTelemetryAt = 0;
 
@@ -66,9 +95,10 @@ export function initYesNo(engine, opts = {}) {
     patientSelect.value = id;
     localStorage.setItem('tacit:patientId', id);
     // Switching who the device is set to shouldn't carry the previous
-    // patient's session log or board forward.
+    // patient's session log, draft, or tier forward.
     messageLog.innerHTML = '<li class="empty">Selections will appear here.</li>';
-    refreshSuggestions();
+    enterYesNoTier();
+    fetchSuggestions();
   }
 
   function sendTelemetry() {}
@@ -77,8 +107,27 @@ export function initYesNo(engine, opts = {}) {
     $('state').textContent = text;
   }
 
+  function currentScanLabel() {
+    if (tier === 'keyboard') {
+      if (kphase === 'row') return `row ${krow + 1}`;
+      return keyboardRowDefs[krow]?.[kcol]?.label ?? '-';
+    }
+    return options[current] || '-';
+  }
+
+  // Whichever tier is active, resume its own scanning mechanism.
+  function startActiveScan() {
+    if (tier === 'keyboard') startKeyboardScan();
+    else startScan();
+  }
+
+  // ------------------------------------------------------------------------
+  // Tiers 1 & 2 — shared flat linear scan
+  // ------------------------------------------------------------------------
+
   function drawBoard() {
     board.innerHTML = '';
+    board.style.gridTemplateRows = `repeat(${Math.max(1, Math.ceil(options.length / 2))}, minmax(130px, 1fr))`;
     options.forEach((label, index) => {
       const button = document.createElement('button');
       button.type = 'button';
@@ -112,7 +161,6 @@ export function initYesNo(engine, opts = {}) {
   function startScan() {
     stopScan();
     chosen = null;
-    typePanel.hidden = true;
     cells().forEach(cell => {
       cell.classList.remove('chosen');
       cell.querySelector('small').textContent = '';
@@ -143,27 +191,28 @@ export function initYesNo(engine, opts = {}) {
 
   function choose(how) {
     if (chosen !== null || current < 0) return;
+    const selected = options[current];
+    // The keyboard cell is a blink-selectable escalation from the board tier
+    // (it's also reachable via the mode switcher); it navigates immediately
+    // rather than logging a message.
+    if (selected === KEYBOARD_OPTION) { enterKeyboardTier(); return; }
+
     stopScan();
     chosen = current;
-    const selected = options[chosen];
     const cell = cells()[chosen];
     cell.classList.remove('highlight');
     cell.classList.add('chosen');
     cell.querySelector('small').textContent = `SELECTED (${how})`;
     $('result').textContent = selected;
-    setStatus(selected === TYPE_OPTION ? 'typing' : 'locked - press Reset');
-
-    if (selected === TYPE_OPTION) {
-      typePanel.hidden = false;
-      customText.focus();
-    } else {
-      appendMessage(selected, how);
-      recordSelection(selected, 'suggested', how);
-    }
+    setStatus('locked - press Home / Reset');
+    appendMessage(selected, how);
+    recordSelection(selected, 'suggested', how);
     sendTelemetry({ t: 'event', cls: 'choose', text: `${selected} via ${how}` });
   }
 
-  async function refreshSuggestions() {
+  // Fetches (and caches) the tier-2 board; only re-renders it if tier 2 is
+  // currently on screen, so it's safe to prefetch in the background.
+  async function fetchSuggestions() {
     $('suggestionStatus').textContent = 'asking Gemini...';
     const patientContext = $('patientContext').value.trim();
     const patientId = patientSelect.value;
@@ -172,19 +221,235 @@ export function initYesNo(engine, opts = {}) {
       // The board is a fixed 2 x 3 grid, so top up from the fallbacks if the
       // main process ever hands back fewer than five options.
       const next = [...(response?.options || []), ...FALLBACK_OPTIONS].slice(0, 5);
-      options = [...next, TYPE_OPTION];
-      current = 0;
-      drawBoard();
-      if (ready) startScan();
+      boardOptions = [...next, KEYBOARD_OPTION];
       $('suggestionStatus').textContent = response?.source === 'gemini'
         ? `Gemini suggestions loaded (${response.model || 'gemini'})`
         : `fallback suggestions${response?.error ? ` (${response.error})` : ''}`;
     } catch (error) {
-      options = [...FALLBACK_OPTIONS, TYPE_OPTION];
-      drawBoard();
-      if (ready) startScan();
+      boardOptions = [...FALLBACK_OPTIONS, KEYBOARD_OPTION];
       $('suggestionStatus').textContent = `fallback suggestions (${error.message || error})`;
     }
+    if (tier === 'board') {
+      options = [...boardOptions];
+      current = 0;
+      drawBoard();
+      startScan();
+    }
+  }
+
+  // ------------------------------------------------------------------------
+  // Tier 3 — frequency-ordered scanning keyboard
+  // ------------------------------------------------------------------------
+
+  function currentWordPrefix(text) {
+    const parts = text.split(' ');
+    return parts[parts.length - 1] || '';
+  }
+
+  // Fresh word (draft empty or just finished with a space): offer this
+  // patient's own most-used past phrases first (one tap sends the whole
+  // phrase), falling back to generic starter words. Mid-word: offer
+  // dictionary completions for the prefix typed so far.
+  function buildPredictionRow(text) {
+    const startingFresh = text === '' || text.endsWith(' ');
+    if (startingFresh) {
+      if (historyPhrasesCache.length) {
+        return historyPhrasesCache.slice(0, 5).map(phrase => ({ kind: 'phrase', label: phrase, value: phrase }));
+      }
+      return predictWords('', 5).map(word => ({ kind: 'predict', label: word, value: word }));
+    }
+    return predictWords(currentWordPrefix(text), 5).map(word => ({ kind: 'predict', label: word, value: word }));
+  }
+
+  function buildKeyboardRows(text) {
+    const rows = [];
+    const predictions = buildPredictionRow(text);
+    if (predictions.length) rows.push(predictions);
+    for (const row of chunk(FREQUENCY_LETTERS, 6)) {
+      rows.push(row.map(letter => ({ kind: 'letter', label: letter, value: letter })));
+    }
+    rows.push([
+      { kind: 'space', label: 'Space' },
+      { kind: 'backspace', label: 'Delete' },
+      { kind: 'clear', label: 'Clear' },
+      { kind: 'speak', label: 'Speak' },
+      { kind: 'back', label: 'Back' },
+    ]);
+    return rows;
+  }
+
+  function drawKeyboard() {
+    keyboardRowDefs = buildKeyboardRows(draftText);
+    keyboardRowsEl.innerHTML = '';
+    keyboardRowDefs.forEach((row, r) => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'kbRow';
+      row.forEach((cell, c) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `kbCell kbCell-${cell.kind}`;
+        btn.textContent = cell.label;
+        // Direct click always activates the cell immediately — the
+        // row-then-column phases below are only for blink scanning.
+        btn.addEventListener('click', () => activateKeyboardCell(r, c));
+        rowEl.appendChild(btn);
+      });
+      keyboardRowsEl.appendChild(rowEl);
+    });
+    keyboardDraftText.textContent = draftText || ' ';
+    updateKeyboardHighlight();
+  }
+
+  function updateKeyboardHighlight() {
+    [...keyboardRowsEl.children].forEach((rowEl, r) => {
+      [...rowEl.children].forEach((cellEl, c) => {
+        const isTargetRow = r === krow;
+        cellEl.classList.toggle('rowActive', kphase === 'row' && isTargetRow);
+        cellEl.classList.toggle('highlight', kphase === 'col' && isTargetRow && c === kcol);
+      });
+    });
+    $('activeChoice').textContent = currentScanLabel();
+  }
+
+  function startKeyboardScan() {
+    stopKeyboardScan();
+    kphase = 'row';
+    krow = 0;
+    kcol = 0;
+    updateKeyboardHighlight();
+    keyboardTimer = setInterval(() => {
+      if (!ready) return;
+      if (kphase === 'row') {
+        krow = (krow + 1) % keyboardRowDefs.length;
+      } else {
+        const len = keyboardRowDefs[krow]?.length || 1;
+        kcol = (kcol + 1) % len;
+      }
+      updateKeyboardHighlight();
+    }, SCAN_INTERVAL_MS);
+    setStatus('scanning');
+    $('result').textContent = '-';
+  }
+
+  function stopKeyboardScan() {
+    if (keyboardTimer) clearInterval(keyboardTimer);
+    keyboardTimer = null;
+  }
+
+  // Row phase: a blink confirms the targeted row and starts scanning its
+  // cells. Column phase: a blink activates the targeted cell.
+  function handleKeyboardBlink() {
+    if (kphase === 'row') {
+      kphase = 'col';
+      kcol = 0;
+      updateKeyboardHighlight();
+    } else {
+      activateKeyboardCell(krow, kcol);
+    }
+  }
+
+  function activateKeyboardCell(r, c) {
+    const cell = keyboardRowDefs[r]?.[c];
+    if (!cell) return;
+    switch (cell.kind) {
+      case 'letter':
+        draftText += cell.value;
+        break;
+      case 'predict': {
+        const parts = draftText.split(' ');
+        parts[parts.length - 1] = cell.value;
+        draftText = parts.join(' ') + ' ';
+        break;
+      }
+      case 'phrase':
+        draftText = cell.value.trim() + ' ';
+        break;
+      case 'space':
+        draftText += ' ';
+        break;
+      case 'backspace':
+        draftText = draftText.slice(0, -1);
+        break;
+      case 'clear':
+        draftText = '';
+        break;
+      case 'speak':
+        speakDraft();
+        return;
+      case 'back':
+        draftText = '';
+        enterBoardTier();
+        return;
+      default:
+        return;
+    }
+    // Any content-changing key: predictions may have changed, so redraw and
+    // restart from the row phase.
+    drawKeyboard();
+    startKeyboardScan();
+  }
+
+  function speakDraft() {
+    stopKeyboardScan();
+    const text = draftText.trim();
+    draftText = '';
+    if (text) {
+      appendMessage(text, 'keyboard');
+      recordSelection(text, 'typed', 'keyboard');
+    }
+    $('result').textContent = text || '-';
+    setStatus('locked - press Home / Reset');
+  }
+
+  // ------------------------------------------------------------------------
+  // Tier transitions
+  // ------------------------------------------------------------------------
+
+  // The mode switcher is a caregiver-operated click control, not part of any
+  // tier's blink scan — it stays visible and active-highlighted in all three.
+  function updateModeButtons() {
+    modeYesNoBtn.classList.toggle('active', tier === 'yesno');
+    modeBoardBtn.classList.toggle('active', tier === 'board');
+    modeKeyboardBtn.classList.toggle('active', tier === 'keyboard');
+  }
+
+  function enterYesNoTier() {
+    tier = 'yesno';
+    updateModeButtons();
+    keyboardEl.hidden = true;
+    board.hidden = false;
+    options = [...YESNO_OPTIONS];
+    current = 0;
+    drawBoard();
+    startScan();
+  }
+
+  function enterBoardTier() {
+    tier = 'board';
+    updateModeButtons();
+    keyboardEl.hidden = true;
+    board.hidden = false;
+    options = [...boardOptions];
+    current = 0;
+    drawBoard();
+    startScan();
+    // Cached board shows instantly above; refresh it live in the background.
+    fetchSuggestions();
+  }
+
+  async function enterKeyboardTier() {
+    tier = 'keyboard';
+    updateModeButtons();
+    board.hidden = true;
+    keyboardEl.hidden = false;
+    draftText = '';
+    historyPhrasesCache = (await window.tacit?.getTopPhrases?.(patientSelect.value)) || [];
+    drawKeyboard();
+    startKeyboardScan();
+  }
+
+  function goHome() {
+    enterYesNoTier();
   }
 
   function drawOverlay(fr) {
@@ -225,7 +490,7 @@ export function initYesNo(engine, opts = {}) {
     octx.scale(-1, 1);
     octx.fillStyle = fr.eye === 'open' ? '#fff' : '#f66';
     octx.font = 'bold 20px system-ui';
-    octx.fillText(`eye: ${fr.eye}   scan: ${options[current] || '-'}`, -overlay.width + 10, 28);
+    octx.fillText(`eye: ${fr.eye}   scan: ${currentScanLabel()}`, -overlay.width + 10, 28);
     octx.restore();
   }
 
@@ -234,6 +499,7 @@ export function initYesNo(engine, opts = {}) {
     if (!eyeTrackingEnabled) return;
     ready = false;
     stopScan();
+    stopKeyboardScan();
     gcal.active = true;
     gcal.startAt = performance.now();
     gcal.samples = [];
@@ -259,7 +525,7 @@ export function initYesNo(engine, opts = {}) {
     }
     ready = true;
     $('calib').textContent = 'ready. The scanner moves option by option; blink once to select.';
-    startScan();
+    startActiveScan();
   }
 
   function drawBar(fr) {
@@ -278,6 +544,7 @@ export function initYesNo(engine, opts = {}) {
     if (e.phase === 'countdown') {
       ready = false;
       stopScan();
+      stopKeyboardScan();
       $('calib').textContent = `blink calibration: get ready... ${(e.remainingMs / 1000).toFixed(1)}s`;
     } else if (e.phase === 'sampling') {
       $('calib').textContent = `blink calibration: blink naturally... ${(e.remainingMs / 1000).toFixed(1)}s`;
@@ -288,13 +555,15 @@ export function initYesNo(engine, opts = {}) {
       else {
         ready = true;
         $('calib').textContent = 'ready. The scanner moves option by option; blink once to select.';
-        startScan();
+        startActiveScan();
       }
     }
   });
 
   engine.on('gaze', e => {
-    if (!eyeTrackingEnabled || !ready || chosen !== null) return;
+    // Gaze-driven column jumps assume the tier-1/2 two-column flat grid;
+    // the keyboard's row/column scan is blink-only.
+    if (!eyeTrackingEnabled || !ready || chosen !== null || tier === 'keyboard') return;
     const col = e.direction === 'left' ? 0 : e.direction === 'right' ? 1 : -1;
     if (col >= 0) setHighlight(Math.min(options.length - 1, Math.floor(current / 2) * 2 + col));
     sendTelemetry({ t: 'event', cls: 'gaze', text: `${e.direction} ${e.x.toFixed(3)}` });
@@ -315,7 +584,9 @@ export function initYesNo(engine, opts = {}) {
 
   engine.on('select', e => {
     $('last').textContent = `SELECT ${e.durationMs.toFixed(0)} ms`;
-    if (ready) choose('blink');
+    if (!ready) return;
+    if (tier === 'keyboard') handleKeyboardBlink();
+    else choose('blink');
   });
   engine.on('rest', () => $('last').textContent = 'REST (eyes held closed)');
   engine.on('resume', e => $('last').textContent = `RESUME after ${e.durationMs.toFixed(0)} ms`);
@@ -348,14 +619,17 @@ export function initYesNo(engine, opts = {}) {
       ready = true;
       gcal.active = false;
       $('lookhere').style.display = 'none';
-      startScan();
+      startActiveScan();
     }
   });
 
-  $('resetBtn').addEventListener('click', () => { if (ready) startScan(); });
+  $('resetBtn').addEventListener('click', goHome);
+  modeYesNoBtn.addEventListener('click', enterYesNoTier);
+  modeBoardBtn.addEventListener('click', enterBoardTier);
+  modeKeyboardBtn.addEventListener('click', enterKeyboardTier);
   $('gazeCalBtn').addEventListener('click', () => { if (engine.getState().calibration === 'done') calibrateGaze(); });
   $('recalBtn').addEventListener('click', () => engine.calibrate());
-  $('refreshBtn').addEventListener('click', refreshSuggestions);
+  $('refreshBtn').addEventListener('click', fetchSuggestions);
   patientSelect.addEventListener('change', () => selectPatient(patientSelect.value));
   newPatientBtn.addEventListener('click', () => {
     newPatientForm.hidden = !newPatientForm.hidden;
@@ -375,20 +649,9 @@ export function initYesNo(engine, opts = {}) {
     await loadPatients(patient.id);
     selectPatient(patient.id);
   });
-  $('sendCustomBtn').addEventListener('click', () => {
-    const text = customText.value.trim();
-    if (!text) return;
-    appendMessage(text, 'typed');
-    recordSelection(text, 'typed', 'typed');
-    customText.value = '';
-    startScan();
-  });
-  customText.addEventListener('keydown', event => {
-    if (event.key === 'Enter') $('sendCustomBtn').click();
-  });
 
-  drawBoard();
-  loadPatients().then(refreshSuggestions);
+  enterYesNoTier();
+  loadPatients().then(() => fetchSuggestions());
 
   (async () => {
     try { await engine.start($('video')); }

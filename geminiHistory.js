@@ -59,32 +59,38 @@ function recordSelection({ patientId, patientContext, text, source, how } = {}) 
   saveHistory(entries);
 }
 
-// Build a short natural-language summary of this patient's past picks to fold
-// into the Gemini prompt. Strictly scoped to this patientId's own bucket —
-// never falls back to another patient's history.
-function summarizeForPrompt(patientId) {
-  const entries = loadHistory();
-  if (!entries.length) return '';
-
-  const key = bucketKey(patientId);
-  const pool = entries.filter(e => e.patientId === key);
-  if (!pool.length) return '';
-
+function rankPhrases(pool, limit) {
   const counts = new Map();
   for (const entry of pool) {
     const phrase = entry.text.trim();
     if (!phrase) continue;
     counts.set(phrase, (counts.get(phrase) || 0) + 1);
   }
-
-  const ranked = [...counts.entries()]
+  return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, MAX_PROMPT_PHRASES)
+    .slice(0, limit)
     .map(([text]) => text);
+}
 
+// This patient's most-picked phrases, most frequent first. Strictly scoped to
+// their own bucket — never falls back to another patient's history. Used both
+// for the Gemini prompt note below and as one-tap quick phrases on the
+// scanning keyboard.
+function topPhrases(patientId, limit = MAX_PROMPT_PHRASES) {
+  const entries = loadHistory();
+  if (!entries.length) return [];
+  const key = bucketKey(patientId);
+  const pool = entries.filter(e => e.patientId === key);
+  return rankPhrases(pool, limit);
+}
+
+// Build a short natural-language summary of this patient's past picks to fold
+// into the Gemini prompt.
+function summarizeForPrompt(patientId) {
+  const ranked = topPhrases(patientId, MAX_PROMPT_PHRASES);
   if (!ranked.length) return '';
   return `This patient has previously needed: ${ranked.join('; ')}. Weigh these when relevant, ` +
     'but do not just repeat the same list verbatim every time — adapt to the current context.';
 }
 
-module.exports = { recordSelection, summarizeForPrompt };
+module.exports = { recordSelection, summarizeForPrompt, topPhrases };
