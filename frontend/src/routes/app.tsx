@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { RoleGate } from "@/components/role-gate";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { useBlinkInput } from "@/hooks/useBlinkInput";
@@ -44,11 +43,7 @@ export const Route = createFileRoute("/app")({
 });
 
 function AppRoute() {
-  return (
-    <RoleGate>
-      <TacitApp />
-    </RoleGate>
-  );
+  return <TacitApp />;
 }
 
 type PatientScreen = "camera" | "calibration" | "yesno" | "needs" | "keyboard" | "confirmed";
@@ -444,7 +439,7 @@ function NeedsBoard({ onSelect, speak }: { onSelect: (value: string) => void; sp
     <section className="w-full max-w-6xl animate-fade-in">
       <div className="mb-7 text-center">
         <p className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-          Quick needs{suggestionSource === "gemini" ? " · Gemini-personalized" : ""}
+          Quick needs{suggestionSource === "gemini" ? " · Gemini-assisted" : ""}
         </p>
         <h1 className="font-display text-3xl font-semibold md:text-5xl">
           What would you like to say?

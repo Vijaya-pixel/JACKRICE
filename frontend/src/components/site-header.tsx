@@ -1,6 +1,5 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 
-import { clearRole, useRole } from "@/lib/role";
 import tacitLogo from "@/assets/tacit-logo.png";
 
 const BASE_NAV = [
@@ -17,14 +16,7 @@ const baseLink =
 const activeLink = "!text-white after:!bg-white";
 
 export function SiteHeader() {
-  const navigate = useNavigate();
-  const { role } = useRole();
-  const items = role === "clinician" ? [...BASE_NAV, CLINICIAN_NAV] : BASE_NAV;
-
-  const signOut = () => {
-    clearRole();
-    navigate({ to: "/", replace: true });
-  };
+  const items = [...BASE_NAV, CLINICIAN_NAV];
 
   return (
     <header className="fixed inset-x-0 top-0 z-40 bg-[#16283a]">
@@ -70,17 +62,7 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        {role === "clinician" ? (
-          <button
-            type="button"
-            onClick={signOut}
-            className="shrink-0 rounded-md border border-white/50 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15"
-          >
-            Sign out
-          </button>
-        ) : (
-          <span className="hidden w-16 md:block" aria-hidden="true" />
-        )}
+        <span className="hidden w-16 md:block" aria-hidden="true" />
       </div>
     </header>
   );

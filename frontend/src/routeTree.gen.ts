@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as ClinicianRouteImport } from './routes/clinician'
 import { Route as HowItWorksRouteImport } from './routes/how-it-works'
-import { Route as VerifyRouteImport } from './routes/verify'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -35,25 +34,18 @@ const HowItWorksRoute = HowItWorksRouteImport.update({
   path: '/how-it-works',
   getParentRoute: () => rootRouteImport,
 } as any)
-const VerifyRoute = VerifyRouteImport.update({
-  id: '/verify',
-  path: '/verify',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/clinician': typeof ClinicianRoute
   '/how-it-works': typeof HowItWorksRoute
-  '/verify': typeof VerifyRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/clinician': typeof ClinicianRoute
   '/how-it-works': typeof HowItWorksRoute
-  '/verify': typeof VerifyRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -61,14 +53,13 @@ export interface FileRoutesById {
   '/app': typeof AppRoute
   '/clinician': typeof ClinicianRoute
   '/how-it-works': typeof HowItWorksRoute
-  '/verify': typeof VerifyRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/clinician' | '/how-it-works' | '/verify'
+  fullPaths: '/' | '/app' | '/clinician' | '/how-it-works'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/clinician' | '/how-it-works' | '/verify'
-  id: '__root__' | '/' | '/app' | '/clinician' | '/how-it-works' | '/verify'
+  to: '/' | '/app' | '/clinician' | '/how-it-works'
+  id: '__root__' | '/' | '/app' | '/clinician' | '/how-it-works'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,7 +67,6 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRoute
   ClinicianRoute: typeof ClinicianRoute
   HowItWorksRoute: typeof HowItWorksRoute
-  VerifyRoute: typeof VerifyRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -109,13 +99,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HowItWorksRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/verify': {
-      id: '/verify'
-      path: '/verify'
-      fullPath: '/verify'
-      preLoaderRoute: typeof VerifyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -124,7 +107,6 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRoute,
   ClinicianRoute: ClinicianRoute,
   HowItWorksRoute: HowItWorksRoute,
-  VerifyRoute: VerifyRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

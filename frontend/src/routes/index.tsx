@@ -58,12 +58,6 @@ function HomePage() {
               <span aria-hidden="true">▶</span>
             </Link>
           </div>
-
-          <div className="mt-4 flex items-center justify-center gap-4 text-sm font-medium text-muted-foreground">
-            <Link to="/verify" className="underline-offset-4 hover:text-foreground hover:underline">
-              Clinician sign-in
-            </Link>
-          </div>
         </section>
       </div>
 
