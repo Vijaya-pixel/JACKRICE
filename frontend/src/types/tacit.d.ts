@@ -105,6 +105,9 @@ export interface TacitBridge {
   listPatients(): Promise<TacitPatient[]>;
   addPatient(entry: { id: string; firstName?: string }): Promise<TacitPatient | null>;
 
+  // Eleven Labs TTS (get API key from .env)
+  getElevenLabsApiKey(): Promise<string>;
+
   // Engine bridge (consumer side)
   onEngineEvent(callback: (event: TacitEngineEvent) => void): () => void;
   sendEngineControl(command: TacitEngineControlCommand): void;
