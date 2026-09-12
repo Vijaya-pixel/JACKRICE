@@ -1,101 +1,176 @@
-/**
- * elevenLabsService.ts — Eleven Labs text-to-speech for the React frontend.
- * Works in both Electron (with IPC) and plain browser.
- */
+/** ElevenLabs speech playback for the Electron frontend. */
 
-let currentAudio: HTMLAudioElement | null = null;
+const SPEECH_ENDPOINT =
+  "https://api.elevenlabs.io/v1/text-to-speech/21m00Tcm4TlvDq8ikWAM?output_format=mp3_44100_128";
+const MAX_CHUNK_LENGTH = 4_000;
 
-/**
- * Get the Eleven Labs API key from the Electron bridge, or empty string in browser.
- */
+/** Keys are supplied by Electron; browser previews have no configured key. */
 export async function getElevenLabsApiKey(): Promise<string> {
-  if (typeof window !== "undefined" && window.tacit?.getElevenLabsApiKey) {
-    try {
-      return await window.tacit.getElevenLabsApiKey();
-    } catch (e) {
-      console.error("[elevenLabsService] Failed to get API key from Electron:", e);
-      return "";
+  try {
+    if (typeof window !== "undefined" && window.tacit?.getElevenLabsApiKey) {
+      const key = await window.tacit.getElevenLabsApiKey();
+      return typeof key === "string" ? key.trim() : "";
     }
+  } catch {
+    // Do not log bridge failures, which may contain credential details.
   }
   return "";
 }
 
-/**
- * Stop any currently playing audio.
- */
-export function stopAudio(): void {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    currentAudio = null;
+class SpeechError extends Error {}
+
+function apiError(status: number): SpeechError {
+  if (status === 401 || status === 403) {
+    return new SpeechError("ElevenLabs access was denied. Check the API key and its permissions.");
   }
+  if (status === 429) {
+    return new SpeechError("ElevenLabs is busy or the speech quota is exhausted. Try again later.");
+  }
+  return new SpeechError(`ElevenLabs could not generate speech (HTTP ${status}). Try again.`);
+}
+
+/** Keep long session summaries within the model's per-request text limit. */
+function splitText(text: string): string[] {
+  const chunks: string[] = [];
+  let remaining = text.trim();
+  while (remaining.length > MAX_CHUNK_LENGTH) {
+    const prefix = remaining.slice(0, MAX_CHUNK_LENGTH + 1);
+    const boundary = Math.max(prefix.lastIndexOf(" "), prefix.lastIndexOf("\n"));
+    const end = boundary > MAX_CHUNK_LENGTH / 2 ? boundary : MAX_CHUNK_LENGTH;
+    chunks.push(remaining.slice(0, end));
+    remaining = remaining.slice(end).trimStart();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+interface SpeechRequest {
+  controller: AbortController;
+  audio: HTMLAudioElement | null;
+  url: string | null;
+  resolvePlayback: (() => void) | null;
+  finish: (error?: Error) => void;
+}
+
+function releaseAudio(request: SpeechRequest): void {
+  const audio = request.audio;
+  request.audio = null;
+  if (audio) {
+    audio.onended = null;
+    audio.onerror = null;
+    audio.pause();
+    audio.removeAttribute("src");
+    audio.load();
+  }
+  if (request.url) {
+    URL.revokeObjectURL(request.url);
+    request.url = null;
+  }
+  const resolve = request.resolvePlayback;
+  request.resolvePlayback = null;
+  resolve?.();
 }
 
 /**
- * Convert text to speech using Eleven Labs and play it.
- * @param text The text to speak
- * @param apiKey The Eleven Labs API key (if empty, does nothing)
+ * One player per hook. A new utterance replaces the previous utterance, including
+ * requests still downloading. speak() settles after playback ends or is stopped.
+ * API reference: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
  */
-export async function speak(text: string, apiKey: string): Promise<void> {
-  if (!text || typeof text !== "string" || !apiKey) {
-    if (!apiKey) console.warn("[elevenLabsService] No API key; TTS disabled");
-    return;
+export function createElevenLabsService() {
+  let active: SpeechRequest | null = null;
+
+  function stopAudio(): void {
+    if (!active) return;
+    const request = active;
+    request.controller.abort();
+    request.finish(new DOMException("Speech stopped.", "AbortError"));
   }
 
-  try {
-    console.log(`[elevenLabsService] Speaking: "${text}"`);
-
-    // Stop any currently playing audio
+  function speak(text: string, apiKey: string): Promise<void> {
     stopAudio();
+    const chunks = splitText(text);
+    if (!chunks.length || !apiKey.trim()) return Promise.resolve();
 
-    const ELEVENLABS_API_BASE = "https://api.elevenlabs.io/v1";
-    const VOICE_ID = "21m00Tcm4TlvDq8ikWAM"; // Rachel
-    // const VOICE_ID = 'EXAVITQu4EsNXXTT9ejl';  // Bella (alternative)
-
-    // Call the Eleven Labs API
-    const response = await fetch(`${ELEVENLABS_API_BASE}/text-to-speech/${VOICE_ID}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "xi-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_multilingual_v2",
-        voice_settings: {
-          stability: 0.5,
-          similarity_boost: 0.75,
+    return new Promise<void>((resolve, reject) => {
+      let finished = false;
+      const request: SpeechRequest = {
+        controller: new AbortController(),
+        audio: null,
+        url: null,
+        resolvePlayback: null,
+        finish(error) {
+          if (finished) return;
+          finished = true;
+          if (active === request) active = null;
+          releaseAudio(request);
+          if (error) reject(error);
+          else resolve();
         },
-      }),
+      };
+      active = request;
+      const isCurrent = () => active === request && !request.controller.signal.aborted;
+
+      async function generateAndPlay(): Promise<void> {
+        for (const chunk of chunks) {
+          let response: Response;
+          try {
+            response = await fetch(SPEECH_ENDPOINT, {
+              method: "POST",
+              signal: request.controller.signal,
+              headers: {
+                "Content-Type": "application/json",
+                Accept: "audio/mpeg",
+                "xi-api-key": apiKey,
+              },
+              body: JSON.stringify({
+                text: chunk,
+                model_id: "eleven_multilingual_v2",
+                voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+              }),
+            });
+          } catch {
+            throw new SpeechError(
+              "Could not connect to ElevenLabs. Check your connection and try again.",
+            );
+          }
+          // Check ownership even when a transport does not honor AbortSignal.
+          if (!isCurrent()) return;
+          if (!response.ok) throw apiError(response.status);
+          const blob = await response.blob();
+          if (!isCurrent()) return;
+
+          request.url = URL.createObjectURL(blob);
+          await new Promise<void>((playbackEnded, playbackFailed) => {
+            request.resolvePlayback = playbackEnded;
+            const audio = new Audio(request.url!);
+            request.audio = audio;
+            audio.onended = () => releaseAudio(request);
+            audio.onerror = () =>
+              playbackFailed(new SpeechError("Speech audio could not be played. Try again."));
+            void audio.play().then(
+              () => {
+                if (!isCurrent()) audio.pause();
+              },
+              () =>
+                playbackFailed(
+                  new SpeechError("Speech playback was blocked or failed. Try again."),
+                ),
+            );
+          });
+          if (!isCurrent()) return;
+        }
+        request.finish();
+      }
+
+      void generateAndPlay().catch((error: unknown) => {
+        request.finish(
+          error instanceof SpeechError
+            ? error
+            : new SpeechError("Could not play speech. Please try again."),
+        );
+      });
     });
-
-    if (!response.ok) {
-      const error = (await response.json()) as { detail?: { message?: string } };
-      throw new Error(
-        `Eleven Labs API error: ${error.detail?.message || response.statusText}`
-      );
-    }
-
-    // Get the audio blob
-    const audioBlob = await response.blob();
-    const audioUrl = URL.createObjectURL(audioBlob);
-
-    // Create and play audio
-    currentAudio = new Audio(audioUrl);
-    currentAudio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
-    };
-    currentAudio.onerror = (e) => {
-      console.error("[elevenLabsService] Audio playback error:", e);
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
-    };
-
-    await currentAudio.play();
-    console.log(`[elevenLabsService] Playing audio for: "${text}"`);
-  } catch (error) {
-    console.error("[elevenLabsService] Error:", error instanceof Error ? error.message : error);
-    // Don't throw; let the app continue without audio
   }
+
+  return { speak, stopAudio };
 }

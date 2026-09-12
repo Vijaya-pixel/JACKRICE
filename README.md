@@ -45,3 +45,16 @@ thread so it never starves Presage's frame pump.
 
 `renderer.js` -> `ENGINE_OVERRIDES` (blink zone timings, EAR thresholds, gaze dead zone/dwell/smoothing).
 Defaults and documentation for every knob: `blinkEngine.js` -> `DEFAULT_CONFIG`.
+
+## Text-to-speech in the React desktop app
+
+Set `ELEVENLABS_API_KEY` in the root `.env`, then restart Electron. The
+**Text-to-speech** switch above the patient workflow turns voice playback on or
+off and remembers the setting on this device. Voice starts enabled when configured.
+Selected Yes/No and board options are spoken for click, blink, and spacebar input;
+keyboard messages are spoken when **DONE** is selected. The session's **Read summary**
+button reads the saved questions and answers aloud.
+
+Turning voice off or pressing **Stop speaking** cancels pending and playing speech.
+Plain browser previews do not have access to the ElevenLabs key and show voice as
+unavailable. API or playback failures leave communication and saving usable.

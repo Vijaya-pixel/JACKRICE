@@ -1,35 +1,67 @@
-/**
- * useElevenLabsTTS — React hook for text-to-speech using Eleven Labs.
- * Fetches the API key from the Electron bridge on mount.
- */
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { useEffect, useRef, useState } from "react";
+import { createElevenLabsService, getElevenLabsApiKey } from "@/lib/elevenlabs-service";
 
-import { getElevenLabsApiKey, speak as elevenLabsSpeak, stopAudio } from "@/lib/elevenlabs-service";
-
+/** Fetch credentials once and track the full request and playback lifecycle. */
 export function useElevenLabsTTS() {
-  const [apiKey, setApiKey] = useState<string>("");
+  const [player] = useState(createElevenLabsService);
   const [isReady, setIsReady] = useState(false);
-  const isMountedRef = useRef(true);
+  const [available, setAvailable] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const apiKeyRef = useRef("");
+  const mountedRef = useRef(false);
+  const requestRef = useRef(0);
 
   useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const key = await getElevenLabsApiKey();
-      if (mounted && isMountedRef.current) {
-        setApiKey(key);
-        setIsReady(true);
-      }
-    })();
+    mountedRef.current = true;
+    let active = true;
+    void getElevenLabsApiKey().then((key) => {
+      if (!active) return;
+      apiKeyRef.current = key;
+      setAvailable(Boolean(key));
+      setIsReady(true);
+    });
     return () => {
-      mounted = false;
+      active = false;
+      mountedRef.current = false;
+      requestRef.current += 1;
+      apiKeyRef.current = "";
+      player.stopAudio();
     };
-  }, []);
+  }, [player]);
 
-  const speak = async (text: string): Promise<void> => {
-    if (!isMountedRef.current) return;
-    await elevenLabsSpeak(text, apiKey);
-  };
+  const stopAudio = useCallback(() => {
+    requestRef.current += 1;
+    player.stopAudio();
+    if (mountedRef.current) {
+      setIsSpeaking(false);
+      setError(null);
+    }
+  }, [player]);
 
-  return { speak, stopAudio, isReady, enabled: !!apiKey };
+  const speak = useCallback(
+    async (text: string): Promise<void> => {
+      if (!mountedRef.current || !apiKeyRef.current || !text.trim()) return;
+      const request = ++requestRef.current;
+      setError(null);
+      setIsSpeaking(true);
+      try {
+        await player.speak(text, apiKeyRef.current);
+      } catch (cause) {
+        if (
+          mountedRef.current &&
+          request === requestRef.current &&
+          !(cause instanceof Error && cause.name === "AbortError")
+        ) {
+          setError(cause instanceof Error ? cause.message : "Speech playback failed. Try again.");
+        }
+      } finally {
+        if (mountedRef.current && request === requestRef.current) setIsSpeaking(false);
+      }
+    },
+    [player],
+  );
+
+  return { speak, stopAudio, isReady, available, isSpeaking, error };
 }

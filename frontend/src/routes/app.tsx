@@ -16,9 +16,11 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { SiteHeader } from "@/components/site-header";
+import { SpeechControls, TextToSpeechProvider } from "@/components/text-to-speech";
 import { Button } from "@/components/ui/button";
 import { useBlinkInput } from "@/hooks/useBlinkInput";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
+import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { localDb } from "@/lib/local-db";
 import {
   buildSuggestedQuestionContext,
@@ -52,7 +54,11 @@ export const Route = createFileRoute("/app")({
 });
 
 function AppRoute() {
-  return <TacitApp />;
+  return (
+    <TextToSpeechProvider>
+      <TacitApp />
+    </TextToSpeechProvider>
+  );
 }
 
 type WorkflowStage =
@@ -244,6 +250,7 @@ function useScanningSelection<T extends string>({
 
 function TacitApp() {
   const [workflow, dispatchWorkflow] = useReducer(workflowReducer, initialWorkflowState);
+  const { stopAudio } = useTextToSpeech();
   const [message, setMessage] = useState("");
   const [spokenMessage, setSpokenMessage] = useState("");
   const [questionSuggestionState, setQuestionSuggestionState] = useState<QuestionSuggestionState>({
@@ -254,6 +261,10 @@ function TacitApp() {
     model: null,
   });
   const electron = useIsElectron();
+
+  useEffect(() => {
+    stopAudio();
+  }, [stopAudio, workflow.currentStage, workflow.currentPatient?.id, workflow.currentSession?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -447,6 +458,7 @@ function PatientView({
 
   return (
     <div className="flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
+      <SpeechControls />
       <div className="flex flex-1 items-center justify-center">
         {currentStage === "PATIENT_SETUP" && (
           <PatientIdentification
@@ -949,6 +961,7 @@ function YesNoCommunicationScreen({
   onSuggestionSelect: (suggestion: SuggestedQuestion) => void;
   onRegenerateSuggestions: () => Promise<void>;
 }) {
+  const { speak } = useTextToSpeech();
   const [question, setQuestion] = useState("");
   const [selectedResponse, setSelectedResponse] = useState<"YES" | "NO" | null>(null);
   const [saved, setSaved] = useState(false);
@@ -983,6 +996,8 @@ function YesNoCommunicationScreen({
       setError(null);
       setSaved(false);
 
+      void speak(option.label);
+
       try {
         const interaction = await localDb.saveInteraction({
           patientId: patient.id,
@@ -1006,7 +1021,7 @@ function YesNoCommunicationScreen({
         setSaving(false);
       }
     },
-    [patient.id, question, saving, selectedResponse, session.id],
+    [patient.id, question, saving, selectedResponse, session.id, speak],
   );
 
   const { index: highlightedIndex, setIndex } = useScanningSelection({
@@ -1144,7 +1159,7 @@ function useScanController({
   active: boolean;
   intervalMs: number;
   onSelect: (index: number) => void;
-  onCycleEnd?: () => void;
+  onCycleEnd?: (() => void) | undefined;
 }) {
   const [currentScanIndex, setCurrentScanIndex] = useState(0);
 
@@ -1459,6 +1474,7 @@ function OptionBoardCommunicationScreen({
   onKeyboard: () => void;
   onContinue: () => void;
 }) {
+  const { speak } = useTextToSpeech();
   const [prompt, setPrompt] = useState("What do you need?");
   const [boardOptions, setBoardOptions] = useState<string[]>([
     "Pain",
@@ -1508,6 +1524,8 @@ function OptionBoardCommunicationScreen({
       setError(null);
       setSaved(false);
 
+      void speak(option.label);
+
       try {
         const interaction = await localDb.saveInteraction({
           patientId: patient.id,
@@ -1536,7 +1554,7 @@ function OptionBoardCommunicationScreen({
         setSaving(false);
       }
     },
-    [onKeyboard, patient.id, prompt, saving, selectedOption, session.id],
+    [onKeyboard, patient.id, prompt, saving, selectedOption, session.id, speak],
   );
 
   const { index: highlightedIndex, setIndex } = useScanningSelection({
@@ -1723,6 +1741,7 @@ function BlinkKeyboardCommunicationScreen({
   onBack: () => void;
   onContinue: () => void;
 }) {
+  const { speak } = useTextToSpeech();
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
@@ -1834,6 +1853,8 @@ function BlinkKeyboardCommunicationScreen({
       setError(null);
       const completionTime = Date.now();
 
+      void speak(completedText.trim());
+
       try {
         const interaction = await localDb.saveInteraction({
           patientId: patient.id,
@@ -1862,7 +1883,7 @@ function BlinkKeyboardCommunicationScreen({
         setSaving(false);
       }
     },
-    [patient.id, saving, session.id],
+    [patient.id, saving, session.id, speak],
   );
 
   const selectCurrentItem = useCallback(
@@ -2179,6 +2200,7 @@ function SessionSummaryScreen({
   spokenMessage: string;
   onStartAnotherPatient: () => void;
 }) {
+  const { speak, stopAudio, enabled, available, isSpeaking } = useTextToSpeech();
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2205,6 +2227,18 @@ function SessionSummaryScreen({
       cancelled = true;
     };
   }, [session.id]);
+
+  const summaryText = [
+    `Session summary for ${patient.name}.`,
+    interactions.length === 0
+      ? "No answers were saved for this session."
+      : `${interactions.length} ${interactions.length === 1 ? "answer was" : "answers were"} saved.`,
+    ...interactions.map((interaction) =>
+      interaction.questionType === "keyboard"
+        ? `Message: ${interaction.response || "No response recorded"}.`
+        : `${interaction.question ? `Question: ${interaction.question}. ` : ""}Answer: ${interaction.response || "No response recorded"}.`,
+    ),
+  ].join(" ");
 
   return (
     <section className="w-full max-w-4xl animate-fade-in" aria-label="Session summary">
@@ -2276,7 +2310,20 @@ function SessionSummaryScreen({
           )}
         </div>
 
-        <div className="mt-8 flex justify-center">
+        <div className="mt-8 flex flex-wrap justify-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            disabled={!enabled || !available || loading || Boolean(error)}
+            onClick={() => {
+              if (isSpeaking) stopAudio();
+              else void speak(summaryText);
+            }}
+          >
+            <Volume2 className="size-5" aria-hidden="true" />
+            {isSpeaking ? "Stop reading" : "Read summary"}
+          </Button>
           <Button size="lg" onClick={onStartAnotherPatient}>
             Start another patient
           </Button>
