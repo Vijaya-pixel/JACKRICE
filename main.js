@@ -38,6 +38,11 @@ function readApiKey() {
 }
 ipcMain.handle('tacit:apiKey', () => readApiKey());
 
+function readElevenLabsApiKey() {
+  return readEnvVar('ELEVENLABS_API_KEY');
+}
+ipcMain.handle('tacit:elevenLabsApiKey', () => readElevenLabsApiKey());
+
 // --- Gemini predicted options ----------------------------------------------
 // Google AI (Gemini API), v1beta `models.generateContent`. Three things about
 // the current API drive the shape of this code:

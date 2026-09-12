@@ -213,6 +213,13 @@ export function initYesNo(engine, opts = {}) {
     appendMessage(selected, how);
     recordSelection(selected, 'suggested', how);
     sendTelemetry({ t: 'event', cls: 'choose', text: `${selected} via ${how}` });
+
+    // Speak the selection using Eleven Labs TTS
+    if (window.tacitTTS && typeof window.tacitTTS.speak === 'function') {
+      window.tacitTTS.speak(selected).catch(err => {
+        console.error('[yesnoApp] TTS error:', err.message);
+      });
+    }
   }
 
   // Fetches (and caches) the tier-2 board; only re-renders it if tier 2 is
@@ -401,6 +408,13 @@ export function initYesNo(engine, opts = {}) {
     if (text) {
       appendMessage(text, 'keyboard');
       recordSelection(text, 'typed', 'keyboard');
+
+      // Speak the selection using Eleven Labs TTS
+      if (window.tacitTTS && typeof window.tacitTTS.speak === 'function') {
+        window.tacitTTS.speak(text).catch(err => {
+          console.error('[yesnoApp] TTS error:', err.message);
+        });
+      }
     }
     $('result').textContent = text || '-';
     setStatus('locked - press Home / Reset');

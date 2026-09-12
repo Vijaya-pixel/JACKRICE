@@ -8,6 +8,7 @@ require('@smartspectra/node-sdk/preload');
 const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('tacit', {
   getApiKey: () => ipcRenderer.invoke('tacit:apiKey'),
+  getElevenLabsApiKey: () => ipcRenderer.invoke('tacit:elevenLabsApiKey'),
   getGeminiSuggestions: context => ipcRenderer.invoke('tacit:geminiSuggestions', context),
   recordSelection: entry => ipcRenderer.invoke('tacit:recordSelection', entry),
   getTopPhrases: patientId => ipcRenderer.invoke('tacit:topPhrases', patientId),
