@@ -10,6 +10,26 @@ export type TacitGeminiSuggestions = {
   error?: string;
 };
 
+export type SuggestedQuestion = {
+  question: string;
+  type: "yes_no" | "option_board";
+  boardOptions?: string[];
+};
+
+export type SuggestedQuestionsResponse = {
+  source: "gemini" | "fallback";
+  model?: string;
+  questions: SuggestedQuestion[];
+  error?: string;
+};
+
+export type KeyboardCompletionsResponse = {
+  source: "gemini" | "fallback";
+  model?: string;
+  completions: string[];
+  error?: string;
+};
+
 export type TacitSelectionEntry = {
   patientId?: string;
   patientContext?: string;
@@ -175,6 +195,7 @@ export type TacitEngineEvent =
         paused: boolean;
         signal: number | null;
         eyePx: number;
+        blinkFlag?: boolean;
       };
     };
 
@@ -187,6 +208,20 @@ export interface TacitBridge {
     patientContext?: string;
     patientId?: string;
   }): Promise<TacitGeminiSuggestions>;
+  getGeminiQuestionSuggestions(context: {
+    patient?: Patient;
+    clinicalContext?: ClinicalContext | null;
+    recentInteractions?: Interaction[];
+    currentSessionInteractions?: Interaction[];
+  }): Promise<SuggestedQuestionsResponse>;
+  getGeminiKeyboardCompletions(context: {
+    typedText: string;
+    clinicianQuestion?: string;
+    patient?: Patient;
+    clinicalContext?: ClinicalContext | null;
+    recentInteractions?: Interaction[];
+    currentSessionInteractions?: Interaction[];
+  }): Promise<KeyboardCompletionsResponse>;
   recordSelection(entry: TacitSelectionEntry): Promise<void>;
   getTopPhrases(patientId?: string): Promise<string[]>;
   listPatients(): Promise<TacitPatient[]>;

@@ -95,6 +95,73 @@ const GEMINI_RESPONSE_SCHEMA = {
   required: ['options'],
 };
 
+const GEMINI_QUESTION_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    questions: {
+      type: 'ARRAY',
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: 'OBJECT',
+        properties: {
+          question: {
+            type: 'STRING',
+            description: 'A short question the clinician may choose to ask the patient.',
+          },
+          type: {
+            type: 'STRING',
+            enum: ['yes_no', 'option_board'],
+            description: 'The best existing communication mode for this question.',
+          },
+          boardOptions: {
+            type: 'ARRAY',
+            minItems: 2,
+            maxItems: 6,
+            items: { type: 'STRING' },
+            description: 'Only for option_board questions. Short patient-selectable answers.',
+          },
+        },
+        required: ['question', 'type'],
+      },
+    },
+  },
+  required: ['questions'],
+};
+
+const GEMINI_QUESTION_SYSTEM_PROMPT = [
+  'You help a clinician communicate efficiently with a patient who may be unable to speak.',
+  'You are NOT diagnosing the patient and must not autonomously make medical decisions.',
+  'Only suggest short questions the clinician may choose, edit, or ignore.',
+  'Prefer questions answerable by yes/no or by a short option board.',
+  'Never imply certainty about the patient condition.',
+].join('\n');
+
+const GEMINI_KEYBOARD_COMPLETION_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    completions: {
+      type: 'ARRAY',
+      minItems: 0,
+      maxItems: 4,
+      items: {
+        type: 'STRING',
+        description: 'A short word or sentence completion preserving the patient-entered prefix.',
+      },
+    },
+  },
+  required: ['completions'],
+};
+
+const GEMINI_KEYBOARD_COMPLETION_SYSTEM_PROMPT = [
+  'You help predict text for an AAC blink keyboard.',
+  'The patient controls selection. You must never submit, speak, or finalize a response.',
+  'You are NOT diagnosing the patient and must not autonomously make medical decisions.',
+  'Return likely short word or sentence completions only.',
+  'Every completion must preserve the exact meaning and visible prefix of text already typed by the patient.',
+  'Prefer concise patient-authored first-person phrases when appropriate.',
+].join('\n');
+
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Join the answer text of a candidate. Parts flagged `thought` carry the
@@ -148,6 +215,71 @@ function fillOptions(list) {
   return normalizeOptions([...list, ...GEMINI_FALLBACK_OPTIONS]);
 }
 
+function parseQuestionArray(text) {
+  if (!text) return [];
+  const body = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  let parsed;
+  try { parsed = JSON.parse(body); } catch (_) { return []; }
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.questions)) return parsed.questions;
+  return [];
+}
+
+function normalizeQuestionSuggestions(list) {
+  const questions = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const question = String(raw?.question ?? '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const type = raw?.type === 'option_board' ? 'option_board' : 'yes_no';
+    if (!question || question.length > 120) continue;
+    const key = question.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const suggestion = { question, type };
+    if (type === 'option_board') {
+      const boardOptions = normalizeOptions(Array.isArray(raw?.boardOptions) ? raw.boardOptions : []).slice(0, 6);
+      if (boardOptions.length >= 2) suggestion.boardOptions = boardOptions;
+    }
+    questions.push(suggestion);
+    if (questions.length === 3) break;
+  }
+  return questions;
+}
+
+function parseCompletionArray(text) {
+  if (!text) return [];
+  const body = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  let parsed;
+  try { parsed = JSON.parse(body); } catch (_) { return []; }
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.completions)) return parsed.completions;
+  return [];
+}
+
+function normalizeKeyboardCompletions(list, typedText = '') {
+  const prefix = String(typedText || '').replace(/\s+/g, ' ').trim();
+  const prefixKey = prefix.toLowerCase();
+  const seen = new Set();
+  const completions = [];
+  for (const raw of list) {
+    const value = String(raw ?? '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s"'\-*•\d.)]+/, '')
+      .replace(/[\s"']+$/, '')
+      .trim();
+    if (!value || value.length > 80) continue;
+    if (prefixKey && !value.toLowerCase().startsWith(prefixKey)) continue;
+    const key = value.toLowerCase();
+    if (seen.has(key) || key === prefixKey) continue;
+    seen.add(key);
+    completions.push(value);
+    if (completions.length === 4) break;
+  }
+  return completions;
+}
+
 async function geminiGenerate(model, apiKey, prompt, { thinking }) {
   const generationConfig = {
     temperature: 0.35,
@@ -167,6 +299,74 @@ async function geminiGenerate(model, apiKey, prompt, { thinking }) {
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: GEMINI_SYSTEM_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const error = new Error(`${model}: ${data?.error?.message || `HTTP ${response.status}`}`);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function geminiGenerateQuestionJson(model, apiKey, prompt, { thinking }) {
+  const generationConfig = {
+    temperature: 0.25,
+    maxOutputTokens: 1536,
+    responseMimeType: 'application/json',
+    responseSchema: GEMINI_QUESTION_RESPONSE_SCHEMA,
+  };
+  if (thinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: GEMINI_QUESTION_SYSTEM_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const error = new Error(`${model}: ${data?.error?.message || `HTTP ${response.status}`}`);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function geminiGenerateKeyboardCompletionJson(model, apiKey, prompt, { thinking }) {
+  const generationConfig = {
+    temperature: 0.35,
+    maxOutputTokens: 1024,
+    responseMimeType: 'application/json',
+    responseSchema: GEMINI_KEYBOARD_COMPLETION_RESPONSE_SCHEMA,
+  };
+  if (thinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: GEMINI_KEYBOARD_COMPLETION_SYSTEM_PROMPT }] },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig,
       }),
@@ -216,6 +416,64 @@ async function geminiSuggest(apiKey, models, prompt) {
   throw error;
 }
 
+async function geminiSuggestQuestions(apiKey, models, prompt) {
+  const failures = [];
+  for (const model of models) {
+    let thinking = true;
+    for (let attempt = 0; attempt < GEMINI_ATTEMPTS_PER_MODEL; attempt++) {
+      try {
+        const data = await geminiGenerateQuestionJson(model, apiKey, prompt, { thinking });
+        const { text, finishReason } = geminiAnswerText(data);
+        const questions = normalizeQuestionSuggestions(parseQuestionArray(text));
+        if (questions.length === 3) return { model, questions, finishReason };
+        failures.push(`${model}: expected 3 usable questions, got ${questions.length} (finishReason ${finishReason})`);
+        break;
+      } catch (error) {
+        const timedOut = error.name === 'AbortError';
+        const message = timedOut ? `${model}: timed out after ${GEMINI_TIMEOUT_MS} ms` : error.message;
+        failures.push(message);
+        if (error.status === 400 && thinking && /thinking/i.test(error.message)) {
+          thinking = false;
+          continue;
+        }
+        if (!timedOut && !GEMINI_RETRYABLE_STATUS.has(error.status)) break;
+        if (attempt < GEMINI_ATTEMPTS_PER_MODEL - 1) await sleep(400 * 2 ** attempt);
+      }
+    }
+  }
+  const error = new Error(failures[failures.length - 1] || 'no response');
+  error.failures = failures;
+  throw error;
+}
+
+async function geminiSuggestKeyboardCompletions(apiKey, models, prompt, typedText) {
+  const failures = [];
+  for (const model of models) {
+    let thinking = true;
+    for (let attempt = 0; attempt < GEMINI_ATTEMPTS_PER_MODEL; attempt++) {
+      try {
+        const data = await geminiGenerateKeyboardCompletionJson(model, apiKey, prompt, { thinking });
+        const { text, finishReason } = geminiAnswerText(data);
+        const completions = normalizeKeyboardCompletions(parseCompletionArray(text), typedText);
+        return { model, completions, finishReason };
+      } catch (error) {
+        const timedOut = error.name === 'AbortError';
+        const message = timedOut ? `${model}: timed out after ${GEMINI_TIMEOUT_MS} ms` : error.message;
+        failures.push(message);
+        if (error.status === 400 && thinking && /thinking/i.test(error.message)) {
+          thinking = false;
+          continue;
+        }
+        if (!timedOut && !GEMINI_RETRYABLE_STATUS.has(error.status)) break;
+        if (attempt < GEMINI_ATTEMPTS_PER_MODEL - 1) await sleep(400 * 2 ** attempt);
+      }
+    }
+  }
+  const error = new Error(failures[failures.length - 1] || 'no response');
+  error.failures = failures;
+  throw error;
+}
+
 ipcMain.handle('tacit:geminiSuggestions', async (_event, context = {}) => {
   const apiKey = readEnvVar('GEMINI_API_KEY');
   if (!apiKey) return { source: 'fallback', options: [...GEMINI_FALLBACK_OPTIONS], error: 'GEMINI_API_KEY missing' };
@@ -237,6 +495,120 @@ ipcMain.handle('tacit:geminiSuggestions', async (_event, context = {}) => {
   } catch (error) {
     console.error('[tacit] gemini failed:', error.failures ? error.failures.join(' | ') : error.message);
     return { source: 'fallback', options: [...GEMINI_FALLBACK_OPTIONS], error: error.message || String(error) };
+  }
+});
+
+ipcMain.handle('tacit:geminiQuestionSuggestions', async (_event, context = {}) => {
+  const apiKey = readEnvVar('GEMINI_API_KEY');
+  if (!apiKey) {
+    return { source: 'fallback', questions: [], error: 'GEMINI_API_KEY missing' };
+  }
+
+  const configured = readEnvVar('GEMINI_MODEL') || GEMINI_DEFAULT_MODEL;
+  const models = [...new Set([configured, GEMINI_DEFAULT_MODEL, GEMINI_BACKUP_MODEL])];
+  const clinicalContext = context.clinicalContext || {};
+  const patient = context.patient || {};
+  const recentInteractions = Array.isArray(context.recentInteractions) ? context.recentInteractions.slice(-8) : [];
+  const currentSessionInteractions = Array.isArray(context.currentSessionInteractions)
+    ? context.currentSessionInteractions.slice(-8)
+    : [];
+
+  const prompt = [
+    'Return exactly 3 JSON question suggestions for the clinician.',
+    'Each object must have: question, type. Use type "yes_no" or "option_board".',
+    'For option_board items, include boardOptions with 2 to 6 short answer options.',
+    'Do not diagnose. Do not recommend treatment. Do not decide what the patient needs.',
+    `Patient: ${JSON.stringify({
+      patientId: patient.patientId,
+      name: patient.name,
+    })}`,
+    `Clinical context: ${JSON.stringify({
+      diagnosis: clinicalContext.diagnosis || '',
+      procedure: clinicalContext.procedure || '',
+      medicalNotes: clinicalContext.medicalNotes || '',
+      bloodTestNotes: clinicalContext.bloodTestNotes || '',
+      additionalContext: clinicalContext.additionalContext || '',
+    })}`,
+    `Recent communication history: ${JSON.stringify(recentInteractions.map(item => ({
+      question: item.question,
+      type: item.questionType,
+      response: item.response,
+      timestamp: item.timestamp,
+    })))}`,
+    `Current session interactions: ${JSON.stringify(currentSessionInteractions.map(item => ({
+      question: item.question,
+      type: item.questionType,
+      response: item.response,
+      timestamp: item.timestamp,
+    })))}`,
+  ].join('\n');
+
+  try {
+    const { model, questions } = await geminiSuggestQuestions(apiKey, models, prompt);
+    console.log(`[tacit] gemini ${model} question suggestions -> ${JSON.stringify(questions)}`);
+    return { source: 'gemini', model, questions };
+  } catch (error) {
+    console.error('[tacit] gemini question suggestions failed:', error.failures ? error.failures.join(' | ') : error.message);
+    return { source: 'fallback', questions: [], error: error.message || String(error) };
+  }
+});
+
+ipcMain.handle('tacit:geminiKeyboardCompletions', async (_event, context = {}) => {
+  const typedText = String(context.typedText || '').replace(/\s+/g, ' ').trim();
+  if (typedText.length < 2) return { source: 'fallback', completions: [] };
+
+  const apiKey = readEnvVar('GEMINI_API_KEY');
+  if (!apiKey) {
+    return { source: 'fallback', completions: [], error: 'GEMINI_API_KEY missing' };
+  }
+
+  const configured = readEnvVar('GEMINI_MODEL') || GEMINI_DEFAULT_MODEL;
+  const models = [...new Set([configured, GEMINI_DEFAULT_MODEL, GEMINI_BACKUP_MODEL])];
+  const clinicalContext = context.clinicalContext || {};
+  const patient = context.patient || {};
+  const recentInteractions = Array.isArray(context.recentInteractions) ? context.recentInteractions.slice(-8) : [];
+  const currentSessionInteractions = Array.isArray(context.currentSessionInteractions)
+    ? context.currentSessionInteractions.slice(-8)
+    : [];
+
+  const prompt = [
+    'Return up to 4 likely completions for the patient text.',
+    'The patient must choose a completion before it is inserted, and still confirms DONE later.',
+    'Do not submit, speak, or finalize anything.',
+    'Every completion must start with the already typed text exactly in meaning and visible prefix.',
+    `Typed text: ${typedText}`,
+    `Clinician current question: ${String(context.clinicianQuestion || '').trim()}`,
+    `Patient: ${JSON.stringify({
+      patientId: patient.patientId,
+      name: patient.name,
+    })}`,
+    `Clinical context: ${JSON.stringify({
+      diagnosis: clinicalContext.diagnosis || '',
+      procedure: clinicalContext.procedure || '',
+      medicalNotes: clinicalContext.medicalNotes || '',
+      bloodTestNotes: clinicalContext.bloodTestNotes || '',
+      additionalContext: clinicalContext.additionalContext || '',
+    })}`,
+    `Recent conversation: ${JSON.stringify(recentInteractions.map(item => ({
+      question: item.question,
+      type: item.questionType,
+      response: item.response,
+      timestamp: item.timestamp,
+    })))}`,
+    `Current session interactions: ${JSON.stringify(currentSessionInteractions.map(item => ({
+      question: item.question,
+      type: item.questionType,
+      response: item.response,
+      timestamp: item.timestamp,
+    })))}`,
+  ].join('\n');
+
+  try {
+    const { model, completions } = await geminiSuggestKeyboardCompletions(apiKey, models, prompt, typedText);
+    return { source: 'gemini', model, completions };
+  } catch (error) {
+    console.error('[tacit] gemini keyboard completions failed:', error.failures ? error.failures.join(' | ') : error.message);
+    return { source: 'fallback', completions: [], error: error.message || String(error) };
   }
 });
 

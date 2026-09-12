@@ -12,6 +12,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('tacit', {
   // --- Gemini + patient directory (unchanged from preload.js) ---
   getGeminiSuggestions: context => ipcRenderer.invoke('tacit:geminiSuggestions', context),
+  getGeminiQuestionSuggestions: context => ipcRenderer.invoke('tacit:geminiQuestionSuggestions', context),
+  getGeminiKeyboardCompletions: context => ipcRenderer.invoke('tacit:geminiKeyboardCompletions', context),
   recordSelection: entry => ipcRenderer.invoke('tacit:recordSelection', entry),
   getTopPhrases: patientId => ipcRenderer.invoke('tacit:topPhrases', patientId),
   listPatients: () => ipcRenderer.invoke('tacit:listPatients'),

@@ -1,5 +1,11 @@
 import { useEffect, useRef } from "react";
 
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
+}
+
 /**
  * Fires onSelect() for a deliberate "choose the highlighted option" gesture.
  * Drop-in replacement for the old useSpaceSelect(onSelect) in routes/app.tsx.
@@ -18,6 +24,7 @@ export function useBlinkInput(onSelect: () => void) {
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
       if (event.code !== "Space" || event.repeat) return;
+      if (isEditableTarget(event.target)) return;
       event.preventDefault();
       onSelectRef.current();
     };
