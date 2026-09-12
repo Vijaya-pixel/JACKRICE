@@ -60,8 +60,8 @@ function HomePage() {
           </div>
 
           <div className="mt-4 flex items-center justify-center gap-4 text-sm font-medium text-muted-foreground">
-            <Link to="/verify" className="underline-offset-4 hover:text-foreground hover:underline">
-              Clinician sign-in
+            <Link to="/clinician" className="underline-offset-4 hover:text-foreground hover:underline">
+              Clinician overview
             </Link>
           </div>
         </section>
