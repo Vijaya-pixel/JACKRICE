@@ -239,18 +239,18 @@ export interface TacitBridge {
     patientId?: string;
   }): Promise<TacitGeminiSuggestions>;
   getGeminiQuestionSuggestions(context: {
-    patient?: Patient;
-    clinicalContext?: ClinicalContext | null;
-    recentInteractions?: Interaction[];
-    currentSessionInteractions?: Interaction[];
+    patient?: Patient | undefined;
+    clinicalContext?: ClinicalContext | null | undefined;
+    recentInteractions?: Interaction[] | undefined;
+    currentSessionInteractions?: Interaction[] | undefined;
   }): Promise<SuggestedQuestionsResponse>;
   getGeminiKeyboardCompletions(context: {
     typedText: string;
-    clinicianQuestion?: string;
-    patient?: Patient;
-    clinicalContext?: ClinicalContext | null;
-    recentInteractions?: Interaction[];
-    currentSessionInteractions?: Interaction[];
+    clinicianQuestion?: string | undefined;
+    patient?: Patient | undefined;
+    clinicalContext?: ClinicalContext | null | undefined;
+    recentInteractions?: Interaction[] | undefined;
+    currentSessionInteractions?: Interaction[] | undefined;
   }): Promise<KeyboardCompletionsResponse>;
   recordSelection(entry: TacitSelectionEntry): Promise<void>;
   getTopPhrases(patientId?: string): Promise<string[]>;

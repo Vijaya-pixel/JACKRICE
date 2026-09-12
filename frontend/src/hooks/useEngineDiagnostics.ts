@@ -28,7 +28,7 @@ export type EngineDiagnostics = {
   face: boolean;
   degraded: boolean;
   warnings: string[];
-  vitals: { pulseBpm?: number; breathingBpm?: number } | null;
+  vitals: { pulseBpm?: number | undefined; breathingBpm?: number | undefined } | null;
   vitalsConfidence: { pulse: number | null; breathing: number | null };
   /** Rolling window of the calibrated closure signal, oldest first — feeds a
    *  live EAR-style chart. Empty until calibration has finished. */
