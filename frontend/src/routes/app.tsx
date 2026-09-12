@@ -27,7 +27,7 @@ import {
 } from "@/lib/question-suggestions";
 import { fetchNeedsSuggestions, recordSelection, useIsElectron } from "@/lib/tacit-api";
 import { cn } from "@/lib/utils";
-import type { Patient, Session, SuggestedQuestion } from "@/types/tacit";
+import type { Interaction, Patient, Session, SuggestedQuestion } from "@/types/tacit";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -480,15 +480,11 @@ function PatientView({
           />
         )}
         {currentStage === "SESSION_SUMMARY" && currentPatient && currentSession && (
-          <WorkflowPlaceholder
-            eyebrow="Session summary"
-            title="Session summary placeholder"
-            body={`The final session summary will appear here. Last message: ${spokenMessage || "none yet"}.`}
+          <SessionSummaryScreen
             patient={currentPatient}
             session={currentSession}
-            detail="summary: pending"
-            primaryLabel="Start another patient"
-            onPrimary={onStartNewWorkflow}
+            spokenMessage={spokenMessage}
+            onStartAnotherPatient={onStartNewWorkflow}
           />
         )}
       </div>
@@ -2167,6 +2163,124 @@ function BlinkKeyboardCommunicationScreen({
         <Button size="lg" onClick={onContinue}>
           Continue
         </Button>
+      </div>
+    </section>
+  );
+}
+
+function SessionSummaryScreen({
+  patient,
+  session,
+  spokenMessage,
+  onStartAnotherPatient,
+}: {
+  patient: Patient;
+  session: Session;
+  spokenMessage: string;
+  onStartAnotherPatient: () => void;
+}) {
+  const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    localDb
+      .listInteractionsForSession(session.id)
+      .then((items) => {
+        if (cancelled) return;
+        setInteractions([...items].sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+      })
+      .catch((summaryError) => {
+        console.error("[tacit] session summary load failed:", summaryError);
+        if (!cancelled) setError("Could not load session answers.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session.id]);
+
+  return (
+    <section className="w-full max-w-4xl animate-fade-in" aria-label="Session summary">
+      <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+        Session summary
+      </p>
+      <div className="rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
+        <div className="text-center">
+          <h1 className="font-display text-3xl font-semibold md:text-5xl">Session summary</h1>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Summary for {patient.name} ({patient.patientId}). Presage vitals will be added later.
+          </p>
+          <div className="mx-auto mt-5 grid w-fit gap-1 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs text-muted-foreground">
+            <span>session: {session.id}</span>
+            <span>started: {new Date(session.startedAt).toLocaleString()}</span>
+            <span>last message: {spokenMessage || "none"}</span>
+          </div>
+        </div>
+
+        <div className="mt-8">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-foreground">Questions answered</h2>
+            <span className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground">
+              {interactions.length} saved
+            </span>
+          </div>
+
+          {loading && (
+            <p className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+              Loading answered questions...
+            </p>
+          )}
+          {error && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {!loading && !error && interactions.length === 0 && (
+            <p className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+              No answered questions were saved for this session.
+            </p>
+          )}
+          {!loading && !error && interactions.length > 0 && (
+            <div className="space-y-3">
+              {interactions.map((interaction) => (
+                <article
+                  key={interaction.id}
+                  className="rounded-lg border border-border bg-background p-4"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="rounded-md bg-muted px-2 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                      {interaction.questionType.replace("_", " ")}
+                    </span>
+                    <time className="text-xs text-muted-foreground">
+                      {new Date(interaction.timestamp).toLocaleTimeString()}
+                    </time>
+                  </div>
+                  {interaction.question && (
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      Question: <span className="font-medium text-foreground">{interaction.question}</span>
+                    </p>
+                  )}
+                  <p className="mt-2 text-base font-semibold text-foreground">
+                    Answer: {interaction.response || "No response recorded"}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="mt-8 flex justify-center">
+          <Button size="lg" onClick={onStartAnotherPatient}>
+            Start another patient
+          </Button>
+        </div>
       </div>
     </section>
   );
