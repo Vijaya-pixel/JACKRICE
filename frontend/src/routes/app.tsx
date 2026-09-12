@@ -7,6 +7,8 @@ import {
   Check,
   Keyboard,
   RotateCcw,
+  Sun,
+  SunDim,
   Undo2,
   Volume2,
 } from "lucide-react";
@@ -215,6 +217,7 @@ function PatientView({
 function CameraCheck({ onDone }: { onDone: () => void }) {
   const [cameraOn, setCameraOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [screenLightOn, setScreenLightOn] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -223,6 +226,11 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
       streamRef.current?.getTracks().forEach((t: MediaStreamTrack) => t.stop());
     };
   }, []);
+
+  // The screen-light overlay is only useful while the camera is actually on.
+  useEffect(() => {
+    if (!cameraOn) setScreenLightOn(false);
+  }, [cameraOn]);
 
   async function openCamera() {
     try {
@@ -246,7 +254,20 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <section className="w-full max-w-3xl animate-fade-in text-center" aria-label="Camera check">
+    <>
+      {screenLightOn && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-white">
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => setScreenLightOn(false)}
+            className="border-black/15 bg-white text-black hover:bg-black/5"
+          >
+            <SunDim /> Turn off screen light
+          </Button>
+        </div>
+      )}
+      <section className="w-full max-w-3xl animate-fade-in text-center" aria-label="Camera check">
       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Step 1 · Diagnosis check
       </p>
@@ -288,6 +309,11 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
           {cameraOn ? <CameraOff /> : <Camera />}
           {cameraOn ? "Close camera" : "Open camera"}
         </Button>
+        {cameraOn && (
+          <Button size="lg" variant="outline" onClick={() => setScreenLightOn(true)}>
+            <Sun /> Brighten screen for lighting
+          </Button>
+        )}
         <Button
           size="lg"
           onClick={() => {
@@ -298,7 +324,8 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
           {cameraOn ? "Looks good — begin calibration" : "Skip and begin calibration"}
         </Button>
       </div>
-    </section>
+      </section>
+    </>
   );
 }
 

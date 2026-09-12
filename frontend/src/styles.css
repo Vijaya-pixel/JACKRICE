@@ -20,7 +20,7 @@
 
 @theme inline {
   --font-sans: "Atkinson Hyperlegible", sans-serif;
-  --font-display: "Playfair Display", Georgia, serif;
+  --font-display: "Fredoka", "Atkinson Hyperlegible", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --color-signal: var(--signal);
   --color-signal-foreground: var(--signal-foreground);
