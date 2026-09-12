@@ -1,0 +1,14 @@
+# secrets — never commit
+.env
+presage.local.json
+
+# deps / build
+node_modules/
+dist/
+release/
+
+# OS / editor
+.DS_Store
+
+# MediaPipe runtime + model (npm run setup)
+mp/
