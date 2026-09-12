@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('tacit', {
   dbGetClinicalContext: patientId => ipcRenderer.invoke('tacit:db:clinicalContext:get', patientId),
   dbSaveClinicalContext: context => ipcRenderer.invoke('tacit:db:clinicalContext:save', context),
   dbCreateSession: session => ipcRenderer.invoke('tacit:db:sessions:create', session),
+  dbGetSession: id => ipcRenderer.invoke('tacit:db:sessions:get', id),
   dbCompleteSession: (id, endedAt) => ipcRenderer.invoke('tacit:db:sessions:complete', id, endedAt),
   dbSaveInteraction: interaction => ipcRenderer.invoke('tacit:db:interactions:save', interaction),
   dbListInteractionsForSession: sessionId => ipcRenderer.invoke('tacit:db:interactions:listForSession', sessionId),

@@ -233,6 +233,10 @@ function createSession(input = {}) {
   return session;
 }
 
+function getSession(id) {
+  return openDb().prepare('SELECT * FROM sessions WHERE id = ?').get(id) || null;
+}
+
 function completeSession(id, endedAt = now()) {
   openDb().prepare(`
     UPDATE sessions SET endedAt = ?, status = 'completed' WHERE id = ?
@@ -309,6 +313,7 @@ module.exports = {
   saveClinicalContext,
   getClinicalContext,
   createSession,
+  getSession,
   completeSession,
   saveInteraction,
   saveVitalReading,

@@ -258,6 +258,14 @@ export const localDb = {
     return electronDb()?.dbCreateSession?.(input) ?? indexedCreateSession(input);
   },
 
+  async getSession(id: string): Promise<Session | null> {
+    return electronDb()?.dbGetSession?.(id) ?? withStore<Session | undefined>(
+      "sessions",
+      "readonly",
+      (store) => store.get(id) as IDBRequest<Session | undefined>,
+    ).then((session) => session ?? null);
+  },
+
   async completeSession(id: string, endedAt?: string): Promise<Session | null> {
     return electronDb()?.dbCompleteSession?.(id, endedAt) ?? indexedCompleteSession(id, endedAt);
   },

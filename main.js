@@ -262,6 +262,7 @@ ipcMain.handle('tacit:db:patients:delete', (_event, id) => tacitDatabase.deleteP
 ipcMain.handle('tacit:db:clinicalContext:get', (_event, patientId) => tacitDatabase.getClinicalContext(patientId));
 ipcMain.handle('tacit:db:clinicalContext:save', (_event, context = {}) => tacitDatabase.saveClinicalContext(context));
 ipcMain.handle('tacit:db:sessions:create', (_event, session = {}) => tacitDatabase.createSession(session));
+ipcMain.handle('tacit:db:sessions:get', (_event, id) => tacitDatabase.getSession(id));
 ipcMain.handle('tacit:db:sessions:complete', (_event, id, endedAt) => tacitDatabase.completeSession(id, endedAt));
 ipcMain.handle('tacit:db:interactions:save', (_event, interaction = {}) => tacitDatabase.saveInteraction(interaction));
 ipcMain.handle('tacit:db:interactions:listForSession', (_event, sessionId) => tacitDatabase.listInteractionsForSession(sessionId));

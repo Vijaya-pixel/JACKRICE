@@ -6,22 +6,20 @@ import {
   HeartPulse,
   Check,
   ClipboardList,
-  Keyboard,
   RotateCcw,
   Undo2,
   Volume2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { useBlinkInput } from "@/hooks/useBlinkInput";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
-import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 import { localDb } from "@/lib/local-db";
 import { fetchNeedsSuggestions, recordSelection, useIsElectron } from "@/lib/tacit-api";
 import { cn } from "@/lib/utils";
-import type { Patient } from "@/types/tacit";
+import type { Patient, Session } from "@/types/tacit";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -49,16 +47,34 @@ function AppRoute() {
   return <TacitApp />;
 }
 
-type PatientScreen =
-  | "identify"
-  | "context"
-  | "setup"
-  | "camera"
-  | "calibration"
-  | "yesno"
-  | "needs"
-  | "keyboard"
-  | "confirmed";
+type WorkflowStage =
+  | "PATIENT_SETUP"
+  | "CLINICAL_CONTEXT"
+  | "CALIBRATION"
+  | "COMMUNICATION"
+  | "SESSION_SUMMARY";
+
+type CalibrationState = "not_started" | "ready" | "calibrating" | "complete" | "failed";
+
+type WorkflowState = {
+  currentStage: WorkflowStage;
+  currentPatient: Patient | null;
+  currentSession: Session | null;
+  calibrationState: CalibrationState;
+  restoring: boolean;
+};
+
+type WorkflowAction =
+  | { type: "RESTORE_START" }
+  | { type: "RESTORE_EMPTY" }
+  | { type: "RESTORE_PATIENT"; patient: Patient }
+  | { type: "RESTORE_SESSION"; patient: Patient; session: Session }
+  | { type: "SELECT_PATIENT"; patient: Patient }
+  | { type: "START_SESSION"; session: Session }
+  | { type: "SET_STAGE"; stage: WorkflowStage }
+  | { type: "SET_CALIBRATION_STATE"; calibrationState: CalibrationState }
+  | { type: "RESET_WORKFLOW" };
+
 type ScanItem = {
   label: string;
   value?: string;
@@ -67,6 +83,66 @@ type ScanItem = {
 
 const ACTIVE_PATIENT_KEY = "tacit:activePatientId";
 const ACTIVE_SESSION_KEY = "tacit:activeSessionId";
+
+const initialWorkflowState: WorkflowState = {
+  currentStage: "PATIENT_SETUP",
+  currentPatient: null,
+  currentSession: null,
+  calibrationState: "not_started",
+  restoring: true,
+};
+
+function workflowReducer(state: WorkflowState, action: WorkflowAction): WorkflowState {
+  switch (action.type) {
+    case "RESTORE_START":
+      return { ...state, restoring: true };
+    case "RESTORE_EMPTY":
+      return { ...initialWorkflowState, restoring: false };
+    case "RESTORE_PATIENT":
+      return {
+        ...state,
+        currentStage: "CLINICAL_CONTEXT",
+        currentPatient: action.patient,
+        currentSession: null,
+        calibrationState: "not_started",
+        restoring: false,
+      };
+    case "RESTORE_SESSION":
+      return {
+        ...state,
+        currentStage: "CALIBRATION",
+        currentPatient: action.patient,
+        currentSession: action.session,
+        calibrationState: "ready",
+        restoring: false,
+      };
+    case "SELECT_PATIENT":
+      return {
+        ...state,
+        currentStage: "CLINICAL_CONTEXT",
+        currentPatient: action.patient,
+        currentSession: null,
+        calibrationState: "not_started",
+        restoring: false,
+      };
+    case "START_SESSION":
+      return {
+        ...state,
+        currentStage: "CALIBRATION",
+        currentSession: action.session,
+        calibrationState: "ready",
+        restoring: false,
+      };
+    case "SET_STAGE":
+      return { ...state, currentStage: action.stage };
+    case "SET_CALIBRATION_STATE":
+      return { ...state, calibrationState: action.calibrationState };
+    case "RESET_WORKFLOW":
+      return { ...initialWorkflowState, restoring: false };
+    default:
+      return state;
+  }
+}
 
 const NEEDS: ScanItem[] = [
   { label: "Pain" },
@@ -110,50 +186,55 @@ function useScanner(length: number, active = true, speed = 1500) {
 }
 
 function TacitApp() {
-  const [screen, setScreen] = useState<PatientScreen>("identify");
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [restoringPatient, setRestoringPatient] = useState(true);
+  const [workflow, dispatchWorkflow] = useReducer(workflowReducer, initialWorkflowState);
   const [message, setMessage] = useState("");
   const [spokenMessage, setSpokenMessage] = useState("");
   const electron = useIsElectron();
-  const tts = useElevenLabsTTS();
 
   useEffect(() => {
     let cancelled = false;
+    dispatchWorkflow({ type: "RESTORE_START" });
     const savedPatientId = window.sessionStorage.getItem(ACTIVE_PATIENT_KEY);
     if (!savedPatientId) {
-      setRestoringPatient(false);
+      dispatchWorkflow({ type: "RESTORE_EMPTY" });
       return;
     }
+    const patientIdToRestore = savedPatientId;
 
-    localDb
-      .getPatient(savedPatientId)
-      .then((patient) => {
+    async function restoreWorkflow() {
+      try {
+        const patient = await localDb.getPatient(patientIdToRestore);
         if (cancelled) return;
-        if (patient) {
-          setSelectedPatient(patient);
-          const savedSessionId = window.sessionStorage.getItem(ACTIVE_SESSION_KEY);
-          if (savedSessionId) {
-            setActiveSessionId(savedSessionId);
-            setScreen("setup");
-          } else {
-            setScreen("context");
-          }
-        } else {
+        if (!patient) {
           window.sessionStorage.removeItem(ACTIVE_PATIENT_KEY);
           window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+          dispatchWorkflow({ type: "RESTORE_EMPTY" });
+          return;
         }
-      })
-      .catch(() => {
+
+        const savedSessionId = window.sessionStorage.getItem(ACTIVE_SESSION_KEY);
+        if (savedSessionId) {
+          const session = await localDb.getSession(savedSessionId);
+          if (cancelled) return;
+          if (session && session.patientId === patient.id && session.status === "active") {
+            dispatchWorkflow({ type: "RESTORE_SESSION", patient, session });
+            return;
+          }
+          window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+        }
+
+        dispatchWorkflow({ type: "RESTORE_PATIENT", patient });
+      } catch (restoreError) {
+        console.error("[tacit] workflow restore failed:", restoreError);
         if (!cancelled) {
           window.sessionStorage.removeItem(ACTIVE_PATIENT_KEY);
           window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+          dispatchWorkflow({ type: "RESTORE_EMPTY" });
         }
-      })
-      .finally(() => {
-        if (!cancelled) setRestoringPatient(false);
-      });
+      }
+    }
+
+    void restoreWorkflow();
 
     return () => {
       cancelled = true;
@@ -161,17 +242,35 @@ function TacitApp() {
   }, []);
 
   function selectPatient(patient: Patient) {
-    setSelectedPatient(patient);
-    setActiveSessionId(null);
     window.sessionStorage.setItem(ACTIVE_PATIENT_KEY, patient.id);
     window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
-    setScreen("context");
+    dispatchWorkflow({ type: "SELECT_PATIENT", patient });
   }
 
-  function startSession(sessionId: string) {
-    setActiveSessionId(sessionId);
-    window.sessionStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
-    setScreen("setup");
+  function startSession(session: Session) {
+    window.sessionStorage.setItem(ACTIVE_SESSION_KEY, session.id);
+    dispatchWorkflow({ type: "START_SESSION", session });
+  }
+
+  function goToCalibration() {
+    dispatchWorkflow({ type: "SET_STAGE", stage: "CALIBRATION" });
+  }
+
+  function goToCommunication() {
+    dispatchWorkflow({ type: "SET_CALIBRATION_STATE", calibrationState: "complete" });
+    dispatchWorkflow({ type: "SET_STAGE", stage: "COMMUNICATION" });
+  }
+
+  function goToSessionSummary() {
+    dispatchWorkflow({ type: "SET_STAGE", stage: "SESSION_SUMMARY" });
+  }
+
+  function startNewWorkflow() {
+    window.sessionStorage.removeItem(ACTIVE_PATIENT_KEY);
+    window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+    setMessage("");
+    setSpokenMessage("");
+    dispatchWorkflow({ type: "RESET_WORKFLOW" });
   }
 
   return (
@@ -179,18 +278,16 @@ function TacitApp() {
       <SiteHeader />
 
       <PatientView
-        screen={screen}
-        setScreen={setScreen}
-        selectedPatient={selectedPatient}
-        activeSessionId={activeSessionId}
-        restoringPatient={restoringPatient}
+        workflow={workflow}
         onPatientIdentified={selectPatient}
         onSessionStarted={startSession}
+        onGoToCalibration={goToCalibration}
+        onGoToCommunication={goToCommunication}
+        onGoToSessionSummary={goToSessionSummary}
+        onStartNewWorkflow={startNewWorkflow}
         message={message}
-        setMessage={setMessage}
         spokenMessage={spokenMessage}
         setSpokenMessage={setSpokenMessage}
-        speak={tts.speak}
       />
 
       <footer className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 px-4 py-2 text-center text-xs text-muted-foreground backdrop-blur-md">
@@ -203,124 +300,82 @@ function TacitApp() {
 }
 
 function PatientView({
-  screen,
-  setScreen,
-  selectedPatient,
-  activeSessionId,
-  restoringPatient,
+  workflow,
   onPatientIdentified,
   onSessionStarted,
+  onGoToCalibration,
+  onGoToCommunication,
+  onGoToSessionSummary,
+  onStartNewWorkflow,
   message,
-  setMessage,
   spokenMessage,
   setSpokenMessage,
-  speak,
 }: {
-  screen: PatientScreen;
-  setScreen: (screen: PatientScreen) => void;
-  selectedPatient: Patient | null;
-  activeSessionId: string | null;
-  restoringPatient: boolean;
+  workflow: WorkflowState;
   onPatientIdentified: (patient: Patient) => void;
-  onSessionStarted: (sessionId: string) => void;
+  onSessionStarted: (session: Session) => void;
+  onGoToCalibration: () => void;
+  onGoToCommunication: () => void;
+  onGoToSessionSummary: () => void;
+  onStartNewWorkflow: () => void;
   message: string;
-  setMessage: React.Dispatch<React.SetStateAction<string>>;
   spokenMessage: string;
   setSpokenMessage: (message: string) => void;
-  speak: (text: string) => Promise<void>;
 }) {
+  const { currentStage, currentPatient, currentSession, calibrationState, restoring } = workflow;
+
   return (
     <div className="flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
-      {screen !== "identify" &&
-        screen !== "context" &&
-        screen !== "setup" &&
-        screen !== "camera" &&
-        screen !== "calibration" &&
-        screen !== "confirmed" && (
-        <nav
-          className="mx-auto mb-6 flex w-full max-w-6xl items-center justify-between"
-          aria-label="Communication modes"
-        >
-          <p className="text-sm font-medium text-muted-foreground">
-            {selectedPatient
-              ? `${selectedPatient.name} (${selectedPatient.patientId}) · blink to select the highlighted choice`
-              : "Blink to select the highlighted choice"}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant={screen === "needs" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setScreen("needs")}
-            >
-              <HeartPulse /> Needs
-            </Button>
-            <Button
-              variant={screen === "keyboard" ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setScreen("keyboard")}
-            >
-              <Keyboard /> Spell
-            </Button>
-          </div>
-        </nav>
-      )}
       <div className="flex flex-1 items-center justify-center">
-        {screen === "identify" && (
+        {currentStage === "PATIENT_SETUP" && (
           <PatientIdentification
-            restoring={restoringPatient}
+            restoring={restoring}
             onIdentified={onPatientIdentified}
           />
         )}
-        {screen === "context" && selectedPatient && (
+        {currentStage === "CLINICAL_CONTEXT" && currentPatient && (
           <PatientContextScreen
-            patient={selectedPatient}
+            patient={currentPatient}
             onSessionStarted={onSessionStarted}
           />
         )}
-        {screen === "setup" && selectedPatient && (
-          <CommunicationSetupPlaceholder
-            patient={selectedPatient}
-            sessionId={activeSessionId}
+        {currentStage === "CALIBRATION" && currentPatient && currentSession && (
+          <WorkflowPlaceholder
+            eyebrow="Calibration"
+            title="Calibration setup"
+            body="Calibration will be connected here next. The patient and active session are already selected."
+            patient={currentPatient}
+            session={currentSession}
+            detail={`calibration: ${calibrationState}`}
+            primaryLabel="Continue to communication"
+            onPrimary={onGoToCommunication}
           />
         )}
-        {screen === "camera" && <CameraCheck onDone={() => setScreen("calibration")} />}
-        {screen === "calibration" && <Calibration onDone={() => setScreen("yesno")} />}
-        {screen === "yesno" && (
-          <YesNo
-            patient={selectedPatient}
-            onDone={() => setScreen("needs")}
-            speak={speak}
-          />
-        )}
-        {screen === "needs" && (
-          <NeedsBoard
-            patient={selectedPatient}
-            onSelect={(value) => {
-              setSpokenMessage(value === "More time" ? "I need more time" : value);
-              setScreen("confirmed");
+        {currentStage === "COMMUNICATION" && currentPatient && currentSession && (
+          <WorkflowPlaceholder
+            eyebrow="Communication"
+            title="Communication board placeholder"
+            body="The communication experience will continue here after calibration is wired into the workflow."
+            patient={currentPatient}
+            session={currentSession}
+            detail={`draft message: ${message || "empty"}`}
+            primaryLabel="Finish session"
+            onPrimary={() => {
+              setSpokenMessage(message || "Session complete");
+              onGoToSessionSummary();
             }}
-            speak={speak}
           />
         )}
-        {screen === "keyboard" && (
-          <ScanningKeyboard
-            patient={selectedPatient}
-            message={message}
-            setMessage={setMessage}
-            onSpeak={(value) => {
-              setSpokenMessage(value || "I need help");
-              setScreen("confirmed");
-            }}
-            speak={speak}
-          />
-        )}
-        {screen === "confirmed" && (
-          <Confirmed
-            message={spokenMessage}
-            onAgain={() => {
-              setMessage("");
-              setScreen("needs");
-            }}
+        {currentStage === "SESSION_SUMMARY" && currentPatient && currentSession && (
+          <WorkflowPlaceholder
+            eyebrow="Session summary"
+            title="Session summary placeholder"
+            body={`The final session summary will appear here. Last message: ${spokenMessage || "none yet"}.`}
+            patient={currentPatient}
+            session={currentSession}
+            detail="summary: pending"
+            primaryLabel="Start another patient"
+            onPrimary={onStartNewWorkflow}
           />
         )}
       </div>
@@ -425,6 +480,237 @@ function PatientIdentification({
             {restoring ? "Loading patient..." : submitting ? "Checking..." : "Continue"}
           </Button>
         </form>
+      </div>
+    </section>
+  );
+}
+
+function PatientContextScreen({
+  patient,
+  onSessionStarted,
+}: {
+  patient: Patient;
+  onSessionStarted: (session: Session) => void;
+}) {
+  const [diagnosis, setDiagnosis] = useState("");
+  const [procedure, setProcedure] = useState("");
+  const [medicalNotes, setMedicalNotes] = useState("");
+  const [bloodTestNotes, setBloodTestNotes] = useState("");
+  const [additionalContext, setAdditionalContext] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setStatus(null);
+
+    localDb
+      .getClinicalContext(patient.id)
+      .then((context) => {
+        if (cancelled || !context) return;
+        setDiagnosis(context.diagnosis);
+        setProcedure(context.procedure);
+        setMedicalNotes(context.medicalNotes);
+        setBloodTestNotes(context.bloodTestNotes);
+        setAdditionalContext(context.additionalContext);
+        setStatus("Existing patient context loaded");
+      })
+      .catch((contextError) => {
+        console.error("[tacit] context load failed:", contextError);
+        if (!cancelled) setError("Could not load patient context. You can still continue.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [patient.id]);
+
+  async function beginCommunication({ saveContext }: { saveContext: boolean }) {
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      if (saveContext) {
+        const saved = await localDb.saveClinicalContext({
+          patientId: patient.id,
+          diagnosis: diagnosis.trim(),
+          procedure: procedure.trim(),
+          medicalNotes: medicalNotes.trim(),
+          bloodTestNotes: bloodTestNotes.trim(),
+          additionalContext: additionalContext.trim(),
+        });
+        if (!saved) {
+          setError("Could not save patient context. Please try again.");
+          return;
+        }
+      }
+
+      const session = await localDb.createSession({ patientId: patient.id });
+      if (!session) {
+        setError("Could not start a patient session. Please try again.");
+        return;
+      }
+
+      setStatus(saveContext ? "Patient context saved" : "Patient context skipped");
+      onSessionStarted(session);
+    } catch (dbError) {
+      console.error("[tacit] context/session step failed:", dbError);
+      setError("Could not continue. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="w-full max-w-3xl animate-fade-in" aria-label="Patient context">
+      <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+        Patient context
+      </p>
+      <div className="rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
+        <div className="flex items-start gap-4">
+          <span className="mt-1 flex size-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
+            <ClipboardList className="size-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h1 className="font-display text-3xl font-semibold md:text-4xl">
+              Add clinical context
+            </h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              Optional notes for {patient.name} ({patient.patientId}). This stays local and can be edited before the session begins.
+            </p>
+          </div>
+        </div>
+
+        <form
+          className="mt-6 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void beginCommunication({ saveContext: true });
+          }}
+        >
+          <label className="block text-sm font-medium text-foreground">
+            Diagnosis
+            <input
+              value={diagnosis}
+              onChange={(event) => setDiagnosis(event.target.value)}
+              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              placeholder="Example: stroke recovery"
+              disabled={loading || submitting}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-foreground">
+            Procedure / recent operation
+            <input
+              value={procedure}
+              onChange={(event) => setProcedure(event.target.value)}
+              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              placeholder="Example: post-op pain review"
+              disabled={loading || submitting}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-foreground">
+            Medical notes
+            <textarea
+              value={medicalNotes}
+              onChange={(event) => setMedicalNotes(event.target.value)}
+              className="mt-2 min-h-24 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              placeholder="Symptoms, mobility, communication considerations"
+              disabled={loading || submitting}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-foreground">
+            Blood test notes
+            <textarea
+              value={bloodTestNotes}
+              onChange={(event) => setBloodTestNotes(event.target.value)}
+              className="mt-2 min-h-20 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              placeholder="Recent values or clinical concerns"
+              disabled={loading || submitting}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-foreground">
+            Additional context
+            <textarea
+              value={additionalContext}
+              onChange={(event) => setAdditionalContext(event.target.value)}
+              className="mt-2 min-h-20 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              placeholder="Family, language, preferences, or bedside notes"
+              disabled={loading || submitting}
+            />
+          </label>
+
+          {error && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+          {status && <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">{status}</p>}
+
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading || submitting}
+              onClick={() => void beginCommunication({ saveContext: false })}
+            >
+              Skip
+            </Button>
+            <Button type="submit" disabled={loading || submitting}>
+              {loading ? "Loading..." : submitting ? "Starting..." : "Continue"}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </section>
+  );
+}
+
+function WorkflowPlaceholder({
+  eyebrow,
+  title,
+  body,
+  patient,
+  session,
+  detail,
+  primaryLabel,
+  onPrimary,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string;
+  patient: Patient;
+  session: Session;
+  detail: string;
+  primaryLabel: string;
+  onPrimary: () => void;
+}) {
+  return (
+    <section className="w-full max-w-2xl animate-fade-in text-center" aria-label={eyebrow}>
+      <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+        {eyebrow}
+      </p>
+      <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
+        <h1 className="font-display text-3xl font-semibold md:text-5xl">
+          {title}
+        </h1>
+        <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground">
+          {body}
+        </p>
+        <div className="mx-auto mt-6 grid w-fit gap-1 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs text-muted-foreground">
+          <span>patient: {patient.name} ({patient.patientId})</span>
+          <span>session: {session.id}</span>
+          <span>{detail}</span>
+        </div>
+        <Button className="mt-7" size="lg" onClick={onPrimary}>
+          {primaryLabel}
+        </Button>
       </div>
     </section>
   );

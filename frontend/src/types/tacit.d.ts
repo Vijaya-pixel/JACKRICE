@@ -200,6 +200,7 @@ export interface TacitBridge {
   dbGetClinicalContext(patientId: string): Promise<ClinicalContext | null>;
   dbSaveClinicalContext(context: SaveClinicalContextInput): Promise<ClinicalContext | null>;
   dbCreateSession(session: CreateSessionInput): Promise<Session | null>;
+  dbGetSession(id: string): Promise<Session | null>;
   dbCompleteSession(id: string, endedAt?: string): Promise<Session | null>;
   dbSaveInteraction(interaction: SaveInteractionInput): Promise<Interaction | null>;
   dbListInteractionsForSession(sessionId: string): Promise<Interaction[]>;
