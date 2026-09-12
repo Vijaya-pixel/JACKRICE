@@ -128,13 +128,15 @@ export function initYesNo(engine, opts = {}) {
     const patientContext = $('patientContext').value.trim();
     try {
       const response = await window.tacit?.getGeminiSuggestions?.({ patientContext });
-      const next = response?.options?.length ? response.options.slice(0, 5) : FALLBACK_OPTIONS;
+      // The board is a fixed 2 x 3 grid, so top up from the fallbacks if the
+      // main process ever hands back fewer than five options.
+      const next = [...(response?.options || []), ...FALLBACK_OPTIONS].slice(0, 5);
       options = [...next, TYPE_OPTION];
       current = 0;
       drawBoard();
       if (ready) startScan();
       $('suggestionStatus').textContent = response?.source === 'gemini'
-        ? 'Gemini suggestions loaded'
+        ? `Gemini suggestions loaded (${response.model || 'gemini'})`
         : `fallback suggestions${response?.error ? ` (${response.error})` : ''}`;
     } catch (error) {
       options = [...FALLBACK_OPTIONS, TYPE_OPTION];

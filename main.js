@@ -38,6 +38,26 @@ function readApiKey() {
 }
 ipcMain.handle('tacit:apiKey', () => readApiKey());
 
+// --- Gemini predicted options ----------------------------------------------
+// Google AI (Gemini API), v1beta `models.generateContent`. Three things about
+// the current API drive the shape of this code:
+//   * Gemini 3.x models think before answering and those thought tokens count
+//     against maxOutputTokens, so a tight cap truncates the answer
+//     (finishReason MAX_TOKENS) and leaves half-written JSON. We ask for a low
+//     thinking level and leave the cap roomy instead.
+//   * responseSchema makes the reply a guaranteed JSON object, so the board
+//     options are parsed exactly instead of scraped out of prose.
+//   * The key belongs in the x-goog-api-key header, not the query string.
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+const GEMINI_DEFAULT_MODEL = 'gemini-flash-latest';
+const GEMINI_BACKUP_MODEL = 'gemini-flash-lite-latest';
+const GEMINI_TIMEOUT_MS = 20000;
+const GEMINI_ATTEMPTS_PER_MODEL = 3;
+// The board is a fixed 2 x 3 grid: five predicted options + "Type yourself".
+const GEMINI_OPTION_COUNT = 5;
+const GEMINI_MAX_OPTION_CHARS = 52;
+const GEMINI_RETRYABLE_STATUS = new Set([408, 429, 500, 502, 503, 504]);
+
 const GEMINI_FALLBACK_OPTIONS = [
   'Yes',
   'No',
@@ -46,59 +66,166 @@ const GEMINI_FALLBACK_OPTIONS = [
   'Please reposition me',
 ];
 
-function cleanOptionList(value) {
-  let parsed = null;
-  try { parsed = JSON.parse(value); } catch (_) { /* handled below */ }
-  const raw = Array.isArray(parsed)
-    ? parsed
-    : String(value).split(/\r?\n|,/).map(s => s.replace(/^[-*\d.\s"]+|["\s]+$/g, ''));
+const GEMINI_SYSTEM_PROMPT = [
+  'You help build an AAC communication board for a hospital patient who cannot speak clearly.',
+  'The patient selects one option by blinking, so every option is something the patient says to a nurse or doctor.',
+  'Write plain first-person language, at most 5 words per option, no punctuation at the end.',
+  'Do not include "Type yourself" — the app adds that as the sixth option.',
+].join('\n');
+
+const GEMINI_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    options: {
+      type: 'ARRAY',
+      minItems: GEMINI_OPTION_COUNT,
+      maxItems: GEMINI_OPTION_COUNT,
+      items: { type: 'STRING', description: 'One thing the patient might want to say, at most 5 words.' },
+    },
+  },
+  required: ['options'],
+};
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+// Join the answer text of a candidate. Parts flagged `thought` carry the
+// model's reasoning rather than the answer, so they are skipped.
+function geminiAnswerText(data) {
+  const candidate = data?.candidates?.[0];
+  const parts = candidate?.content?.parts;
+  const finishReason = candidate?.finishReason || (candidate ? 'STOP' : 'NO_CANDIDATE');
+  if (!Array.isArray(parts)) return { text: '', finishReason };
+  const text = parts
+    .filter(part => part && part.thought !== true && typeof part.text === 'string')
+    .map(part => part.text)
+    .join('');
+  return { text: text.trim(), finishReason };
+}
+
+// responseSchema guarantees a JSON object, but tolerate a bare array or a
+// ```json fence in case someone points GEMINI_MODEL at an older model.
+function parseOptionArray(text) {
+  if (!text) return [];
+  const body = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '').trim();
+  let parsed;
+  try { parsed = JSON.parse(body); } catch (_) { return []; }
+  if (Array.isArray(parsed)) return parsed;
+  if (Array.isArray(parsed?.options)) return parsed.options;
+  return [];
+}
+
+// Trim, drop anything unusable, de-duplicate, and keep at most five.
+function normalizeOptions(list) {
   const seen = new Set();
-  return raw
-    .map(v => String(v || '').trim())
-    .filter(v => v.length > 0 && v.length <= 52)
-    .filter(v => {
-      const key = v.toLowerCase();
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 5);
+  const out = [];
+  for (const raw of list) {
+    const value = String(raw ?? '')
+      .replace(/\s+/g, ' ')
+      .replace(/^[\s"'\-*•\d.)]+/, '')
+      .replace(/[\s"']+$/, '')
+      .trim();
+    if (!value || value.length > GEMINI_MAX_OPTION_CHARS) continue;
+    const key = value.toLowerCase();
+    if (key === 'type yourself' || seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+    if (out.length === GEMINI_OPTION_COUNT) break;
+  }
+  return out;
+}
+
+// The grid has exactly five slots, so top up a short list from the fallbacks.
+function fillOptions(list) {
+  return normalizeOptions([...list, ...GEMINI_FALLBACK_OPTIONS]);
+}
+
+async function geminiGenerate(model, apiKey, prompt, { thinking }) {
+  const generationConfig = {
+    temperature: 0.35,
+    maxOutputTokens: 1024,
+    responseMimeType: 'application/json',
+    responseSchema: GEMINI_RESPONSE_SCHEMA,
+  };
+  // thinkingLevel is the Gemini 3.x control; older models reject it (see below).
+  if (thinking) generationConfig.thinkingConfig = { thinkingLevel: 'low' };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${GEMINI_API_BASE}/models/${encodeURIComponent(model)}:generateContent`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: GEMINI_SYSTEM_PROMPT }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      const error = new Error(`${model}: ${data?.error?.message || `HTTP ${response.status}`}`);
+      error.status = response.status;
+      throw error;
+    }
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Try each model in turn, retrying the overloaded/rate-limited statuses that
+// the Gemini API returns often enough to matter during a demo.
+async function geminiSuggest(apiKey, models, prompt) {
+  const failures = [];
+  for (const model of models) {
+    let thinking = true;
+    for (let attempt = 0; attempt < GEMINI_ATTEMPTS_PER_MODEL; attempt++) {
+      try {
+        const data = await geminiGenerate(model, apiKey, prompt, { thinking });
+        const { text, finishReason } = geminiAnswerText(data);
+        const options = normalizeOptions(parseOptionArray(text));
+        if (options.length) return { model, options, finishReason };
+        failures.push(`${model}: no usable options (finishReason ${finishReason})`);
+        break; // A well-formed but empty answer will not improve on a retry.
+      } catch (error) {
+        const timedOut = error.name === 'AbortError';
+        const message = timedOut ? `${model}: timed out after ${GEMINI_TIMEOUT_MS} ms` : error.message;
+        failures.push(message);
+        // A pinned pre-3.x model rejects thinkingLevel; drop it and try again.
+        if (error.status === 400 && thinking && /thinking/i.test(error.message)) {
+          thinking = false;
+          continue;
+        }
+        if (!timedOut && !GEMINI_RETRYABLE_STATUS.has(error.status)) break;
+        if (attempt < GEMINI_ATTEMPTS_PER_MODEL - 1) await sleep(400 * 2 ** attempt);
+      }
+    }
+  }
+  const error = new Error(failures[failures.length - 1] || 'no response');
+  error.failures = failures;
+  throw error;
 }
 
 ipcMain.handle('tacit:geminiSuggestions', async (_event, context = {}) => {
   const apiKey = readEnvVar('GEMINI_API_KEY');
-  const model = readEnvVar('GEMINI_MODEL') || 'gemini-2.0-flash';
-  const patientContext = String(context.patientContext || '').trim();
-  if (!apiKey) return { source: 'fallback', options: GEMINI_FALLBACK_OPTIONS, error: 'GEMINI_API_KEY missing' };
+  if (!apiKey) return { source: 'fallback', options: [...GEMINI_FALLBACK_OPTIONS], error: 'GEMINI_API_KEY missing' };
 
+  const configured = readEnvVar('GEMINI_MODEL') || GEMINI_DEFAULT_MODEL;
+  const models = [...new Set([configured, GEMINI_DEFAULT_MODEL, GEMINI_BACKUP_MODEL])];
+  const patientContext = String(context.patientContext || '').trim();
   const prompt = [
-    'You are helping build an AAC communication board for a hospital patient who cannot speak clearly.',
-    'Return exactly five short patient-selectable options as a JSON array of strings.',
-    'Each option must be useful for nurse/doctor interaction, plain language, and at most 5 words.',
-    'Do not include "Type yourself"; the app adds that as the sixth option.',
     patientContext ? `Clinical context: ${patientContext}` : 'Clinical context: general inpatient bedside conversation.',
+    `Give the ${GEMINI_OPTION_COUNT} options this patient is most likely to need right now.`,
   ].join('\n');
 
   try {
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.35,
-          maxOutputTokens: 160,
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
-    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
-    const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim() || '';
-    const options = cleanOptionList(text);
-    return { source: 'gemini', options: options.length ? options : GEMINI_FALLBACK_OPTIONS };
+    const { model, options } = await geminiSuggest(apiKey, models, prompt);
+    console.log(`[tacit] gemini ${model} -> ${JSON.stringify(options)}`);
+    return { source: 'gemini', model, options: fillOptions(options) };
   } catch (error) {
-    return { source: 'fallback', options: GEMINI_FALLBACK_OPTIONS, error: error.message || String(error) };
+    console.error('[tacit] gemini failed:', error.failures ? error.failures.join(' | ') : error.message);
+    return { source: 'fallback', options: [...GEMINI_FALLBACK_OPTIONS], error: error.message || String(error) };
   }
 });
 
