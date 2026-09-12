@@ -27,6 +27,11 @@ export function initYesNo(engine, opts = {}) {
     'Please reposition me',
   ];
 
+  // Drives the CSS dwell-progress bar (see .choice::after / .kbCell::after in
+  // yesno.css) so it always matches this constant instead of a duplicated
+  // magic number in the stylesheet.
+  document.documentElement.style.setProperty('--dwell-ms', `${SCAN_INTERVAL_MS}ms`);
+
   const $ = id => document.getElementById(id);
   const board = $('board');
   const overlay = $('overlay');

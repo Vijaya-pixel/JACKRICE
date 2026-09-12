@@ -10,9 +10,19 @@
   --selected: #56d27b;
   --accent: #6fb7ff;
   --danger: #ff7474;
+  /* Overridden at runtime from SCAN_INTERVAL_MS (yesnoApp.js) so the dwell
+     indicator always matches the actual scan speed; this is just a fallback. */
+  --dwell-ms: 1500ms;
 }
 
 * { box-sizing: border-box; }
+
+/* Shared by the dwell-progress bars on .choice (tiers 1-2) and .kbCell
+   (tier 3) — a single definition so both stay visually identical. */
+@keyframes dwellFill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
 
 body {
   margin: 0;
@@ -178,6 +188,7 @@ h1 {
   border: 4px solid var(--line);
   background: var(--panel-2);
   text-align: center;
+  overflow: hidden;
 }
 
 .choiceIndex {
@@ -227,6 +238,27 @@ h1 {
   border-color: #ffffff;
 }
 
+/* Dwell-progress indicator: a bar that fills over the scan interval, so the
+   active cell visibly counts down to its own auto-advance instead of just
+   flatly swapping highlight. Driven entirely by the .highlight class already
+   being toggled in JS — no extra timers needed, see dwellFill below. */
+.choice::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  height: 5px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.choice.highlight::after {
+  opacity: 0.9;
+  animation: dwellFill var(--dwell-ms) linear forwards;
+}
+
 .keyboard {
   display: grid;
   gap: 12px;
@@ -260,6 +292,7 @@ h1 {
 }
 
 .kbCell {
+  position: relative;
   min-height: 54px;
   padding: 8px;
   border: 3px solid var(--line);
@@ -269,6 +302,7 @@ h1 {
   font-weight: 800;
   text-transform: uppercase;
   text-align: center;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 
@@ -293,6 +327,27 @@ h1 {
   background: var(--focus);
   color: #161616;
   border-color: #ffffff;
+}
+
+/* Same dwell-progress indicator as the flat board (see .choice::after):
+   shown while a whole row is targeted (row phase) and while one cell within
+   it is targeted (column phase). */
+.kbCell::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  height: 4px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kbCell.rowActive::after,
+.kbCell.highlight::after {
+  opacity: 0.9;
+  animation: dwellFill var(--dwell-ms) linear forwards;
 }
 
 .output {
