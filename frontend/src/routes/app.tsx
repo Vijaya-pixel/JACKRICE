@@ -12,7 +12,6 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { RoleGate } from "@/components/role-gate";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { useBlinkInput } from "@/hooks/useBlinkInput";
@@ -44,11 +43,7 @@ export const Route = createFileRoute("/app")({
 });
 
 function AppRoute() {
-  return (
-    <RoleGate>
-      <TacitApp />
-    </RoleGate>
-  );
+  return <TacitApp />;
 }
 
 type PatientScreen = "camera" | "calibration" | "yesno" | "needs" | "keyboard" | "confirmed";
