@@ -1,26 +1,384 @@
-/* Bare-bones test harness. NOT the product UI. */
-  body { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee; }
-  /* Yes at the far left, No at the far right, video in the middle: the two
-     targets need to be far apart on screen for eye rotation to be measurable. */
-  #row { display: flex; justify-content: space-between; align-items: center; padding: 16px; gap: 16px; }
-  /* HARD REQUIREMENT: live video always visible and mirrored. */
-  #stage { position: relative; width: 480px; height: 360px; background: #000; flex: none; }
-  #video, #overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; transform: scaleX(-1); }
-  #overlay { pointer-events: none; }
-  .box { width: 200px; height: 200px; display: flex; align-items: center; justify-content: center;
-         flex-direction: column; font-size: 40px; font-weight: bold; border: 4px solid #444; background: #222; }
-  .box.highlight { background: #ffd54a; color: #000; border-color: #fff; }
-  .box.chosen    { background: #2ecc71; color: #000; border-color: #fff; }
-  .box.target    { background: #4aa3ff; color: #000; border-color: #fff; }
-  .box small { font-size: 16px; margin-top: 8px; }
-  #info { margin: 0 16px; font-family: ui-monospace, monospace; font-size: 14px; line-height: 1.6; }
-  #calib { color: #fc0; }
-  #warn { color: #f66; }
-  #bar { width: 400px; height: 10px; background: #333; position: relative; margin: 4px 0; }
-  #bar .mark { position: absolute; top: -3px; width: 2px; height: 16px; background: #888; }
-  #bar .zone { position: absolute; top: 0; height: 10px; background: #2a4a2a; }
-  #lookhere { position: absolute; left: 0; right: 0; top: 40%; text-align: center; font-size: 36px; font-weight: bold;
-              color: #4aa3ff; text-shadow: 0 0 8px #000; display: none; pointer-events: none; }
-  #bar #dot { position: absolute; top: -3px; width: 8px; height: 16px; background: #4aa3ff; margin-left: -4px; }
-  button { font: inherit; padding: 8px 16px; cursor: pointer; margin-right: 8px; }
-.dim { color: #888; }
+:root {
+  color-scheme: dark;
+  --bg: #101112;
+  --panel: #181a1d;
+  --panel-2: #20242a;
+  --text: #f4f7fb;
+  --muted: #9aa5b1;
+  --line: #3a4048;
+  --focus: #ffd84d;
+  --selected: #56d27b;
+  --accent: #6fb7ff;
+  --danger: #ff7474;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button, input {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--line);
+  background: #2a3038;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+#app {
+  display: grid;
+  grid-template-columns: minmax(620px, 1fr) 430px;
+  gap: 18px;
+  min-height: 100vh;
+  padding: 18px;
+}
+
+#communication, #diagnostics {
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.1;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.toggle input {
+  width: 22px;
+  height: 22px;
+}
+
+.contextRow {
+  margin-bottom: 16px;
+}
+
+.contextRow label, .label {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.contextControl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px;
+  gap: 10px;
+}
+
+.contextControl input, .typePanel input {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #0f1215;
+  color: var(--text);
+  padding: 12px 14px;
+}
+
+.contextControl button, .typePanel button, .buttonRow button {
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.hint {
+  min-height: 20px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.board {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(130px, 1fr));
+  gap: 12px;
+  min-height: 430px;
+}
+
+.choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 130px;
+  padding: 18px 20px;
+  border: 4px solid var(--line);
+  background: var(--panel-2);
+  text-align: center;
+}
+
+.choiceIndex {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.choiceText {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: clamp(24px, 4.2vw, 44px);
+  font-weight: 850;
+  line-height: 1.08;
+}
+
+.choice small {
+  min-height: 20px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.choice.highlight {
+  background: var(--focus);
+  color: #161616;
+  border-color: #ffffff;
+}
+
+.choice.highlight .choiceIndex,
+.choice.highlight small {
+  color: #161616;
+  border-color: #161616;
+}
+
+.choice.chosen {
+  background: var(--selected);
+  color: #101112;
+  border-color: #ffffff;
+}
+
+.typePanel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 110px;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.typePanel[hidden] {
+  display: none;
+}
+
+.output {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.output > div {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.output strong {
+  display: block;
+  min-height: 32px;
+  font-size: 24px;
+  overflow-wrap: anywhere;
+}
+
+.messageLog {
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.messageLog li {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  background: var(--panel);
+  border-left: 4px solid var(--accent);
+}
+
+.messageLog strong {
+  overflow-wrap: anywhere;
+}
+
+.messageLog span, .empty {
+  color: var(--muted);
+}
+
+#diagnostics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #000;
+}
+
+#video, #overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: scaleX(-1);
+}
+
+#overlay {
+  pointer-events: none;
+}
+
+#lookhere {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40%;
+  text-align: center;
+  font-size: 34px;
+  font-weight: 850;
+  color: var(--accent);
+  text-shadow: 0 0 8px #000;
+  display: none;
+  pointer-events: none;
+}
+
+#info {
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+#calib {
+  color: var(--focus);
+}
+
+#warn {
+  min-height: 20px;
+  color: var(--danger);
+}
+
+.dim {
+  color: var(--muted);
+}
+
+#bar {
+  width: 100%;
+  max-width: 400px;
+  height: 10px;
+  background: #333;
+  position: relative;
+  margin: 8px 0;
+}
+
+#bar .mark {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 16px;
+  background: #888;
+}
+
+#bar .zone {
+  position: absolute;
+  top: 0;
+  height: 10px;
+  background: #2a4a2a;
+}
+
+#bar #dot {
+  position: absolute;
+  top: -3px;
+  width: 8px;
+  height: 16px;
+  background: var(--accent);
+  margin-left: -4px;
+}
+
+.buttonRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+@media (max-width: 1050px) {
+  #app {
+    grid-template-columns: 1fr;
+  }
+
+  #diagnostics {
+    max-width: 560px;
+  }
+}
+
+@media (max-width: 680px) {
+  #app {
+    padding: 12px;
+  }
+
+  .topbar, .output {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .contextControl, .typePanel, .buttonRow {
+    grid-template-columns: 1fr;
+  }
+
+  .board {
+    grid-template-columns: 1fr;
+    grid-template-rows: repeat(6, 110px);
+  }
+}

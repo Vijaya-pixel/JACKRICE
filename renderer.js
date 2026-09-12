@@ -38,10 +38,19 @@ const ENGINE_OVERRIDES = {
     $('calib').textContent = 'No Presage API key. Create a .env file next to package.json with PRESAGE_API_KEY=... and restart (see .env.example).';
     return;
   }
-  // HYBRID: Presage = blink detection + vitals (+ landmarks for EAR timing);
-  // a local MediaPipe face mesh supplies sub-pixel iris points for gaze only.
-  const gazeTracker = createGazeTracker();
-  const source = createPresageSource({ apiKey, vitals: true, zoom: 1, gazeProvider: gazeTracker });
+  // HYBRID when enabled: Presage = blink detection + vitals (+ landmarks for
+  // EAR timing); MediaPipe supplies sub-pixel iris points for gaze only.
+  // The default product flow is blink-only scanning, so the local gaze worker is
+  // started only if the user enables eye tracking.
+  let eyeTrackingEnabled = localStorage.getItem('tacit:eyeTracking') === '1';
+  let gazeTracker = null;
+  let gazeStarting = false;
+  const gazeProvider = {
+    latest() {
+      return eyeTrackingEnabled && gazeTracker ? gazeTracker.latest() : null;
+    },
+  };
+  const source = createPresageSource({ apiKey, vitals: true, zoom: 1, gazeProvider });
   source.on('validation', v => {
     // Presage's own measurement-quality feedback (lighting, framing, motion).
     $('warn').textContent = v.ok ? '' : `Presage: ${v.name}${v.hint ? ' — ' + v.hint : ''}`;
@@ -83,11 +92,35 @@ const ENGINE_OVERRIDES = {
   // Start the gaze tracker on the same <video> once Presage has attached its stream.
   const videoEl = $('video');
   const startGaze = async () => {
+    if (!eyeTrackingEnabled || gazeTracker || gazeStarting) return;
     if (!videoEl.videoWidth) { setTimeout(startGaze, 200); return; }
+    gazeStarting = true;
+    gazeTracker = createGazeTracker();
     try { await gazeTracker.start(videoEl, m => console.log(`[gaze] ${m}`)); }
-    catch (e) { console.error('[gaze] failed to start:', e.message || e); $('warn').textContent = 'Gaze tracker failed to start: ' + (e.message || e); }
+    catch (e) {
+      console.error('[gaze] failed to start:', e.message || e);
+      $('warn').textContent = 'Gaze tracker failed to start: ' + (e.message || e);
+      gazeTracker?.stop();
+      gazeTracker = null;
+    } finally {
+      gazeStarting = false;
+    }
+  };
+  const stopGaze = () => {
+    gazeTracker?.stop();
+    gazeTracker = null;
   };
   engine.on('status', e => { if (e.phase === 'running') startGaze(); });
-  setInterval(() => console.log(`[gaze] fps=${gazeTracker.fps} inference=${gazeTracker.inferenceMs.toFixed(0)}ms latest=${gazeTracker.latest() ? 'ok' : 'none'}`), 5000);
-  initYesNo(engine, { getCrop: () => source.crop });
+  setInterval(() => {
+    if (!eyeTrackingEnabled) return console.log('[gaze] disabled');
+    console.log(`[gaze] fps=${gazeTracker?.fps ?? 0} inference=${(gazeTracker?.inferenceMs ?? 0).toFixed(0)}ms latest=${gazeTracker?.latest() ? 'ok' : 'none'}`);
+  }, 5000);
+  initYesNo(engine, {
+    getCrop: () => source.crop,
+    setEyeTrackingEnabled: enabled => {
+      eyeTrackingEnabled = enabled;
+      if (enabled) startGaze();
+      else stopGaze();
+    },
+  });
 })();

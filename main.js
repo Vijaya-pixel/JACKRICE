@@ -1,6 +1,6 @@
 // main.js — Electron main process for Tacit.
 // Creates the window, wires the Presage SmartSpectra IPC bridge, grants the
-// camera to our own bundled page only, and serves the API key from .env.
+// camera to our own bundled page only, and serves API helpers from .env.
 'use strict';
 
 const fs = require('fs');
@@ -16,19 +16,91 @@ if (app.isPackaged && !process.env.SMARTSPECTRA_CAPI_PATH) {
 
 const { bindSmartSpectraIpc } = require('@smartspectra/node-sdk/main');
 
-// --- API key from .env (PRESAGE_API_KEY=...) or the environment -------------
-function readApiKey() {
-  if (process.env.PRESAGE_API_KEY) return process.env.PRESAGE_API_KEY.trim();
+function readEnvFileVar(name) {
   try {
     const env = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
     for (const line of env.split(/\r?\n/)) {
-      const m = line.match(/^\s*PRESAGE_API_KEY\s*=\s*(.*?)\s*$/);
+      const m = line.match(new RegExp(`^\\s*${name}\\s*=\\s*(.*?)\\s*$`));
       if (m) return m[1].replace(/^["']|["']$/g, '');
     }
   } catch (_) { /* no .env */ }
   return '';
 }
+
+// --- API keys from .env or the environment ---------------------------------
+function readEnvVar(name) {
+  if (process.env[name]) return process.env[name].trim();
+  return readEnvFileVar(name);
+}
+
+function readApiKey() {
+  return readEnvVar('PRESAGE_API_KEY');
+}
 ipcMain.handle('tacit:apiKey', () => readApiKey());
+
+const GEMINI_FALLBACK_OPTIONS = [
+  'Yes',
+  'No',
+  'I am in pain',
+  'I need water',
+  'Please reposition me',
+];
+
+function cleanOptionList(value) {
+  let parsed = null;
+  try { parsed = JSON.parse(value); } catch (_) { /* handled below */ }
+  const raw = Array.isArray(parsed)
+    ? parsed
+    : String(value).split(/\r?\n|,/).map(s => s.replace(/^[-*\d.\s"]+|["\s]+$/g, ''));
+  const seen = new Set();
+  return raw
+    .map(v => String(v || '').trim())
+    .filter(v => v.length > 0 && v.length <= 52)
+    .filter(v => {
+      const key = v.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 5);
+}
+
+ipcMain.handle('tacit:geminiSuggestions', async (_event, context = {}) => {
+  const apiKey = readEnvVar('GEMINI_API_KEY');
+  const model = readEnvVar('GEMINI_MODEL') || 'gemini-2.0-flash';
+  const patientContext = String(context.patientContext || '').trim();
+  if (!apiKey) return { source: 'fallback', options: GEMINI_FALLBACK_OPTIONS, error: 'GEMINI_API_KEY missing' };
+
+  const prompt = [
+    'You are helping build an AAC communication board for a hospital patient who cannot speak clearly.',
+    'Return exactly five short patient-selectable options as a JSON array of strings.',
+    'Each option must be useful for nurse/doctor interaction, plain language, and at most 5 words.',
+    'Do not include "Type yourself"; the app adds that as the sixth option.',
+    patientContext ? `Clinical context: ${patientContext}` : 'Clinical context: general inpatient bedside conversation.',
+  ].join('\n');
+
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.35,
+          maxOutputTokens: 160,
+          responseMimeType: 'application/json',
+        },
+      }),
+    });
+    if (!response.ok) throw new Error(`Gemini HTTP ${response.status}`);
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim() || '';
+    const options = cleanOptionList(text);
+    return { source: 'gemini', options: options.length ? options : GEMINI_FALLBACK_OPTIONS };
+  } catch (error) {
+    return { source: 'fallback', options: GEMINI_FALLBACK_OPTIONS, error: error.message || String(error) };
+  }
+});
 
 function createWindow() {
   const win = new BrowserWindow({
