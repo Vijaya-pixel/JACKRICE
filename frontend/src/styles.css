@@ -205,6 +205,8 @@
 }
 .signal-line { stroke: var(--primary); stroke-width: 3; stroke-linejoin: round; stroke-linecap: round; filter: drop-shadow(0 0 5px color-mix(in oklch, var(--primary) 45%, transparent)); }
 .threshold-line { stroke: var(--threshold); stroke-width: 2; stroke-dasharray: 8 7; vector-effect: non-scaling-stroke; }
+.threshold-zone { fill: color-mix(in oklch, var(--threshold) 13%, transparent); }
+.blink-dot { fill: var(--threshold); stroke: var(--card); stroke-width: 2; vector-effect: non-scaling-stroke; }
 
 @keyframes cam-scan {
   0% { transform: translateY(0%); }

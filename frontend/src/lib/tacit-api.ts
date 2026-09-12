@@ -43,8 +43,26 @@ export async function fetchNeedsSuggestions(context: {
   }
 }
 
-/** No-op outside Electron. */
+export const LAST_SELECTION_STORAGE_KEY = "tacit:lastSelection";
+
+/**
+ * Records a patient selection. Also mirrors it to localStorage so a
+ * clinician-view tab on the SAME browser/machine can show "what did the
+ * patient just say" live (see useLastSelection in clinician-view.tsx) — this
+ * is same-origin, same-device only; it does not reach a separate device.
+ */
 export async function recordSelection(entry: TacitSelectionEntry): Promise<void> {
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(
+        LAST_SELECTION_STORAGE_KEY,
+        JSON.stringify({ text: entry.text, how: entry.how, t: Date.now() }),
+      );
+    } catch {
+      // Private browsing / storage disabled: the clinician "last selection"
+      // card just has nothing to show, nothing else depends on this.
+    }
+  }
   if (!window.tacit) return;
   try {
     await window.tacit.recordSelection(entry);

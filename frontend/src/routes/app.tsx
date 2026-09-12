@@ -339,23 +339,47 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
 
 function Calibration({ onDone }: { onDone: () => void }) {
   const diagnostics = useEngineDiagnostics();
-  const triggeredRef = useRef(false);
+  const startedRef = useRef(false);
+  const gazeStartedRef = useRef(false);
 
   // Electron: (re)run calibration fresh each time this screen is reached,
   // rather than relying on the engine's one-shot auto-calibration from when
   // the hidden engine-host window first started (which likely finished
-  // before the user got here).
+  // before the user got here). Eye tracking is off by default in the engine
+  // host (see engineHostRenderer.js) — turn it on here so gaze centering
+  // below has real sub-pixel gaze to sample.
   useEffect(() => {
-    if (diagnostics.available && !triggeredRef.current) {
-      triggeredRef.current = true;
+    if (diagnostics.available && !startedRef.current) {
+      startedRef.current = true;
+      diagnostics.setEyeTracking(true);
       diagnostics.calibrate();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [diagnostics.available]);
 
+  // Once blink calibration settles, center gaze ("look at the middle of the
+  // screen") before moving on. Skipped if blink calibration itself failed —
+  // there is no reliable eye signal to center against yet.
+  useEffect(() => {
+    if (!diagnostics.available || gazeStartedRef.current) return;
+    if (diagnostics.calibration === "done") {
+      gazeStartedRef.current = true;
+      diagnostics.calibrateGaze();
+    } else if (diagnostics.calibration === "failed") {
+      gazeStartedRef.current = true;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagnostics.available, diagnostics.calibration]);
+
   useEffect(() => {
     if (diagnostics.available) {
-      if (diagnostics.calibration === "done" || diagnostics.calibration === "failed") {
+      const blinkSettled =
+        diagnostics.calibration === "done" || diagnostics.calibration === "failed";
+      const gazeSettled =
+        diagnostics.calibration === "failed" ||
+        diagnostics.gazeCalibration === "done" ||
+        diagnostics.gazeCalibration === "failed";
+      if (blinkSettled && gazeSettled) {
         const timer = window.setTimeout(onDone, 600);
         return () => window.clearTimeout(timer);
       }
@@ -365,28 +389,53 @@ function Calibration({ onDone }: { onDone: () => void }) {
     // simulated delay so the demo still flows without Electron.
     const timer = window.setTimeout(onDone, 3400);
     return () => window.clearTimeout(timer);
-  }, [diagnostics.available, diagnostics.calibration, onDone]);
+  }, [diagnostics.available, diagnostics.calibration, diagnostics.gazeCalibration, onDone]);
+
+  const centeringGaze =
+    diagnostics.calibration === "done" &&
+    (diagnostics.gazeCalibration === "sampling" || diagnostics.gazeCalibration === "idle");
+
+  const vitalsLabel =
+    diagnostics.vitalsCalibration === "ready"
+      ? null
+      : diagnostics.vitalsCalibration === "timeout"
+        ? "Still reading your pulse — hold still if you can"
+        : diagnostics.vitalsCalibration === "sampling"
+          ? "Reading your pulse..."
+          : null;
 
   return (
-    <section className="animate-fade-in text-center" aria-label="Calibrating blink detection">
+    <section
+      className="animate-fade-in text-center"
+      aria-label={centeringGaze ? "Centering gaze tracking" : "Calibrating blink detection"}
+    >
       <div className="calibration-ring mx-auto mb-10 grid size-56 place-items-center rounded-full md:size-64">
         <div className="grid size-[82%] place-items-center rounded-full bg-background">
           <div>
             <Activity className="mx-auto mb-2 size-8 text-primary" />
-            <span className="font-display text-3xl font-semibold">Calibrating</span>
+            <span className="font-display text-3xl font-semibold">
+              {centeringGaze ? "Look here" : "Calibrating"}
+            </span>
           </div>
         </div>
       </div>
       <h1 className="font-display text-3xl font-semibold md:text-5xl">
-        Getting to know your blink...
+        {centeringGaze
+          ? "Now look at the middle of the screen..."
+          : "Getting to know your blink..."}
       </h1>
       <p className="mx-auto mt-5 max-w-lg text-lg text-muted-foreground">
-        Keep your eyes relaxed. There is nothing you need to do.
+        {centeringGaze
+          ? "Keep looking here for a couple seconds."
+          : "Keep your eyes relaxed. There is nothing you need to do."}
       </p>
       <div className="mx-auto mt-8 flex w-fit items-center gap-2 text-sm text-primary">
         <span className="size-2 rounded-full bg-primary motion-safe:animate-pulse" />
         Preparing your controls
       </div>
+      {vitalsLabel && (
+        <p className="mx-auto mt-3 max-w-lg text-sm text-muted-foreground">{vitalsLabel}</p>
+      )}
     </section>
   );
 }

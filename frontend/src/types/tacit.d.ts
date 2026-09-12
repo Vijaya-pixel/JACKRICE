@@ -30,6 +30,16 @@ export type TacitPatient = {
 export type TacitCalibrationPhase = "countdown" | "sampling" | "done" | "failed";
 export type TacitEyeState = "open" | "closing" | "closed";
 export type TacitGazeDirection = "left" | "center" | "right";
+// Gaze centering: "look at the center of the screen" for a couple seconds
+// right after blink calibration finishes. Mirrors the blink calibration
+// phase naming, minus "countdown" (no lead-in needed).
+export type TacitGazeCalibrationPhase = "sampling" | "done" | "failed";
+// Presage's cardio/breathing signal takes several seconds of a held-still,
+// well-lit face before its own confidence score is trustworthy. "sampling"
+// covers that warm-up; "timeout" means it's still not confident after the
+// budget but sampling continues in the background; "ready" is sticky once
+// reached (see engineHostRenderer.js's vitalsCalTick).
+export type TacitVitalsCalibrationPhase = "sampling" | "ready" | "timeout";
 
 export type TacitCalibrationResult = {
   baseline: number;
@@ -68,12 +78,32 @@ export type TacitEngineEvent =
   | { type: "warning"; payload: { code: string; active: boolean; message: string } }
   | { type: "gaze"; payload: { t: number; direction: TacitGazeDirection; x: number } }
   | {
+      type: "gazeCalibration";
+      payload: {
+        phase: TacitGazeCalibrationPhase;
+        remainingMs?: number;
+        sampleCount: number;
+        center?: number;
+        deadZone?: number;
+        reason?: string;
+      };
+    }
+  | {
       type: "vitals";
       payload: {
         pulseBpm?: number;
         pulseConfidence?: number;
         breathingBpm?: number;
         breathingConfidence?: number;
+      };
+    }
+  | {
+      type: "vitalsCalibration";
+      payload: {
+        phase: TacitVitalsCalibrationPhase;
+        elapsedMs: number;
+        pulseConfidence: number;
+        breathingConfidence: number | null;
       };
     }
   | {
@@ -92,7 +122,7 @@ export type TacitEngineEvent =
     };
 
 export type TacitEngineControlCommand =
-  { type: "calibrate" } | { type: "setEyeTracking"; enabled: boolean };
+  { type: "calibrate" } | { type: "calibrateGaze" } | { type: "setEyeTracking"; enabled: boolean };
 
 export interface TacitBridge {
   // Gemini + patient directory (main-process IPC, see ../../../main.js)
