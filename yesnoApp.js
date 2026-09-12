@@ -13,7 +13,7 @@
  * would be far too slow. Every cell in every tier is also a real button, so
  * the whole flow can be driven by mouse click with no camera at all.
  */
-import { FREQUENCY_LETTERS, predictWords, chunk } from './keyboardData.js';
+import { FREQUENCY_LETTERS, predictNextWords, predictSentences, predictWords, chunk } from './keyboardData.js';
 
 export function initYesNo(engine, opts = {}) {
   const SCAN_INTERVAL_MS = 1500;
@@ -263,14 +263,23 @@ export function initYesNo(engine, opts = {}) {
   // phrase), falling back to generic starter words. Mid-word: offer
   // dictionary completions for the prefix typed so far.
   function buildPredictionRow(text) {
-    const startingFresh = text === '' || text.endsWith(' ');
-    if (startingFresh) {
+    if (text === '') {
       if (historyPhrasesCache.length) {
         return historyPhrasesCache.slice(0, 5).map(phrase => ({ kind: 'phrase', label: phrase, value: phrase }));
       }
-      return predictWords('', 5).map(word => ({ kind: 'predict', label: word, value: word }));
+      return [
+        ...predictSentences('', 3).map(sentence => ({ kind: 'sentence', label: sentence, value: sentence })),
+        ...predictWords('', 2).map(word => ({ kind: 'predict', label: word, value: word })),
+      ];
     }
-    return predictWords(currentWordPrefix(text), 5).map(word => ({ kind: 'predict', label: word, value: word }));
+    const sentences = predictSentences(text, 3)
+      .map(sentence => ({ kind: 'sentence', label: sentence, value: sentence }));
+    const contextual = predictNextWords(text, 5);
+    const predictions = contextual.length ? contextual : predictWords(currentWordPrefix(text), 5);
+    return [
+      ...sentences,
+      ...predictions.map(word => ({ kind: 'predict', label: word, value: word })),
+    ].slice(0, 5);
   }
 
   function buildKeyboardRows(text) {
@@ -374,6 +383,7 @@ export function initYesNo(engine, opts = {}) {
         break;
       }
       case 'phrase':
+      case 'sentence':
         draftText = cell.value.trim() + ' ';
         break;
       case 'space':

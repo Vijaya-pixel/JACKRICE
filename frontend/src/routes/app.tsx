@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   Activity,
+  BookPlus,
   Camera,
   CameraOff,
   HeartPulse,
@@ -52,7 +53,7 @@ type PatientScreen = "camera" | "calibration" | "yesno" | "needs" | "keyboard" |
 type ScanItem = {
   label: string;
   value?: string;
-  kind?: "letter" | "suggestion" | "undo" | "speak";
+  kind?: "letter" | "suggestion" | "sentence" | "undo" | "speak" | "dictionary";
 };
 
 const NEEDS: ScanItem[] = [
@@ -77,6 +78,184 @@ const SUGGESTIONS: ScanItem[] = [
   { label: "Please call my family", value: "Please call my family", kind: "suggestion" },
   { label: "I am uncomfortable", value: "I am uncomfortable", kind: "suggestion" },
 ];
+
+const NEXT_WORDS: Record<string, string[]> = {
+  i: ["need", "want", "am", "feel", "would", "have"],
+  you: ["are", "can", "need", "please", "want"],
+  are: ["welcome", "leaving", "going", "right", "safe", "okay", "comfortable"],
+  "i need": ["help", "water", "the", "to", "more", "my"],
+  "i am": ["in", "very", "uncomfortable", "tired", "cold", "hot"],
+  "please call": ["the", "my", "a", "nurse", "doctor", "family"],
+  need: ["help", "water", "the", "a", "to", "more"],
+  want: ["water", "food", "to", "my", "the", "more"],
+  am: ["in", "very", "uncomfortable", "tired", "cold", "hot"],
+  feel: ["sick", "better", "worse", "dizzy", "cold", "hot"],
+  please: ["help", "call", "wait", "stop", "turn", "move"],
+  call: ["the", "my", "a", "nurse", "doctor", "family"],
+  my: ["family", "water", "medicine", "phone", "head", "back"],
+  more: ["time", "water", "help", "please"],
+};
+
+const SENTENCE_PREDICTIONS = [
+  "I need help", "I need water", "I need to use the bathroom", "I am in pain",
+  "I am uncomfortable", "I feel sick", "I feel better", "Please call the nurse",
+  "Please call my family", "Please reposition me", "Please give me more time",
+  "Can you speak slowly", "I would like to rest", "I want to go home",
+  "Thank you for helping me", "I need help right now", "I need my medicine",
+  "I need to change position", "I have a headache", "I have trouble breathing",
+  "My pain is getting worse", "My pain is getting better", "Please turn on the light",
+  "Please close the curtain", "Please bring me a blanket", "Please tell the doctor",
+  "Can you help me sit up", "Can you help me move", "I am ready to continue",
+  "I am not ready yet",
+];
+
+const PREDICTION_HISTORY_KEY = "tacit:prediction-history";
+const LOCAL_DICTIONARY_KEY = "tacit:local-dictionary";
+const PREDICTION_SCOPE_KEY = "tacit:prediction-device-id";
+type LocalPredictionDictionary = {
+  words: Record<string, number>;
+  bigrams: Record<string, number>;
+  trigrams: Record<string, number>;
+  phrases: Record<string, number>;
+};
+
+const COMMON_PREDICTIONS = [
+  "a", "about", "after", "again", "all", "alone", "and", "another", "any", "anything",
+  "are", "around", "as", "at", "awake", "back", "be", "because", "bed", "bedroom",
+  "big", "blood", "breakfast", "bring", "button", "careful", "chair", "change",
+  "comfortable", "continue", "day", "different", "do", "done", "down", "early",
+  "enough", "evening", "every", "feel", "fever", "finished", "first", "follow",
+  "from", "get", "give", "going", "goodbye", "head", "hear", "here", "ice",
+  "important", "inside", "just", "keep", "know", "left", "listen", "little",
+  "longer", "look", "make", "morning", "need", "next", "night", "nothing", "off",
+  "on", "or", "our", "outside", "painful", "people", "please", "position", "quiet", "ready",
+  "right", "room", "same", "see", "send", "share", "she", "should", "short", "show",
+  "side", "something", "soon", "sound", "than", "thank", "that", "the", "their", "them",
+  "then", "there", "these", "they", "think", "this", "those", "three", "time", "stay",
+  "still", "strong", "support", "take", "tell", "today", "together", "too", "touch", "up",
+  "use", "very", "voice", "walk", "warm", "watch", "we", "weak", "well", "what", "when",
+  "where", "which", "who", "will", "with", "work", "would", "yes", "you", "your", "zero",
+];
+
+function predictionStorageKey(baseKey: string): string {
+  if (typeof window === "undefined") return `${baseKey}:server`;
+  try {
+    let deviceId = localStorage.getItem(PREDICTION_SCOPE_KEY);
+    if (!deviceId) {
+      deviceId = typeof crypto?.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      localStorage.setItem(PREDICTION_SCOPE_KEY, deviceId);
+    }
+    return `${baseKey}:${deviceId}`;
+  } catch {
+    return `${baseKey}:temporary`;
+  }
+}
+
+function loadPredictionHistory(): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const stored = JSON.parse(localStorage.getItem(predictionStorageKey(PREDICTION_HISTORY_KEY)) || "{}");
+    return stored && typeof stored === "object" ? stored : {};
+  } catch { return {}; }
+}
+
+function loadLocalDictionary(): LocalPredictionDictionary {
+  const empty = { words: {}, bigrams: {}, trigrams: {}, phrases: {} };
+  if (typeof window === "undefined") return empty;
+  try {
+    const stored = JSON.parse(localStorage.getItem(predictionStorageKey(LOCAL_DICTIONARY_KEY)) || "{}");
+    return {
+      words: stored?.words && typeof stored.words === "object" ? stored.words : {},
+      bigrams: stored?.bigrams && typeof stored.bigrams === "object" ? stored.bigrams : {},
+      trigrams: stored?.trigrams && typeof stored.trigrams === "object" ? stored.trigrams : {},
+      phrases: stored?.phrases && typeof stored.phrases === "object" ? stored.phrases : {},
+    };
+  } catch { return empty; }
+}
+
+function incrementCount(counts: Record<string, number>, key: string) {
+  counts[key] = (counts[key] || 0) + 1;
+}
+
+function keepMostUseful(counts: Record<string, number>, limit: number) {
+  return Object.fromEntries(Object.entries(counts).sort(([, a], [, b]) => b - a).slice(0, limit));
+}
+
+function learnLocalDictionary(message: string) {
+  if (typeof window === "undefined") return;
+  const phrase = message.trim().replace(/\s+/g, " ").toLowerCase();
+  const words = phrase.match(/[a-z]+(?:'[a-z]+)?/g) || [];
+  if (!words.length) return;
+  const dictionary = loadLocalDictionary();
+  incrementCount(dictionary.phrases, phrase);
+  words.forEach((word) => incrementCount(dictionary.words, word));
+  for (let index = 1; index < words.length; index += 1) incrementCount(dictionary.bigrams, `${words[index - 1]} ${words[index]}`);
+  for (let index = 2; index < words.length; index += 1) incrementCount(dictionary.trigrams, `${words[index - 2]} ${words[index - 1]} ${words[index]}`);
+  localStorage.setItem(predictionStorageKey(LOCAL_DICTIONARY_KEY), JSON.stringify({
+    words: keepMostUseful(dictionary.words, 1000),
+    bigrams: keepMostUseful(dictionary.bigrams, 2000),
+    trigrams: keepMostUseful(dictionary.trigrams, 3000),
+    phrases: keepMostUseful(dictionary.phrases, 300),
+  }));
+}
+
+function addWordToLocalDictionary(word: string) {
+  const normalized = word.trim().toLowerCase();
+  if (!/^[a-z]+(?:'[a-z]+)?$/.test(normalized)) return;
+  const dictionary = loadLocalDictionary();
+  dictionary.words[normalized] = (dictionary.words[normalized] || 0) + 3;
+  localStorage.setItem(predictionStorageKey(LOCAL_DICTIONARY_KEY), JSON.stringify({
+    words: keepMostUseful(dictionary.words, 1000),
+    bigrams: keepMostUseful(dictionary.bigrams, 2000),
+    trigrams: keepMostUseful(dictionary.trigrams, 3000),
+    phrases: keepMostUseful(dictionary.phrases, 300),
+  }));
+}
+
+function rememberPredictionPhrase(message: string) {
+  if (typeof window === "undefined") return;
+  const phrase = message.trim().replace(/\s+/g, " ");
+  if (!phrase) return;
+  const history = loadPredictionHistory();
+  history[phrase.toLowerCase()] = (history[phrase.toLowerCase()] || 0) + 1;
+  localStorage.setItem(predictionStorageKey(PREDICTION_HISTORY_KEY), JSON.stringify(
+    Object.fromEntries(Object.entries(history).sort(([, a], [, b]) => b - a).slice(0, 100)),
+  ));
+  learnLocalDictionary(message);
+}
+
+function getKeyboardPredictions(message: string): ScanItem[] {
+  if (!message.trim()) return SUGGESTIONS;
+  const normalizedMessage = message.toLowerCase().trim();
+  const history = loadPredictionHistory();
+  const dictionary = loadLocalDictionary();
+  const sentenceMatches = [...new Set([
+    ...Object.keys(history), ...Object.keys(dictionary.phrases),
+    ...SENTENCE_PREDICTIONS.map((sentence) => sentence.toLowerCase()),
+  ])].filter((sentence) => sentence.startsWith(normalizedMessage)).sort(
+    (first, second) => (history[second] || 0) - (history[first] || 0),
+  ).slice(0, 2);
+  const words = normalizedMessage.split(/\s+/);
+  const hasTrailingSpace = message.endsWith(" ");
+  const currentWord = words.at(-1) ?? "";
+  const prefix = hasTrailingSpace ? "" : currentWord;
+  const previous = hasTrailingSpace ? currentWord : words.at(-2) ?? "";
+  const contextKey = words.slice(-2).join(" ");
+  const contextual = !hasTrailingSpace && NEXT_WORDS[currentWord] ? NEXT_WORDS[currentWord] : NEXT_WORDS[previous] ?? [];
+  const learnedContext = hasTrailingSpace ? Object.entries(dictionary.bigrams)
+    .filter(([pair]) => pair.startsWith(`${currentWord} `)).sort(([, a], [, b]) => b - a)
+    .map(([pair]) => pair.split(" ").at(-1) || "") : [];
+  const learnedTrigramContext = hasTrailingSpace ? Object.entries(dictionary.trigrams)
+    .filter(([trigram]) => trigram.startsWith(`${contextKey} `)).sort(([, a], [, b]) => b - a)
+    .map(([trigram]) => trigram.split(" ").at(-1) || "") : [];
+  const learnedWords = Object.entries(dictionary.words).sort(([, a], [, b]) => b - a).map(([word]) => word);
+  const candidates = [...(NEXT_WORDS[contextKey] ?? []), ...learnedTrigramContext, ...learnedContext, ...contextual, ...learnedWords, ...COMMON_PREDICTIONS];
+  const wordMatches = [...new Set(candidates)].filter((word) => word.startsWith(prefix)).slice(0, 3)
+    .map((word) => ({ label: word, value: word, kind: "suggestion" as const }));
+  return [...sentenceMatches.map((sentence) => ({ label: sentence, value: sentence, kind: "sentence" as const })), ...wordMatches].slice(0, 3);
+}
 
 const NEED_TONES = [
   "bg-pastel-green/70",
@@ -143,6 +322,8 @@ function PatientView({
   setSpokenMessage: (message: string) => void;
   speak: (text: string) => Promise<void>;
 }) {
+  const [dictionaryWord, setDictionaryWord] = useState<string | null>(null);
+
   return (
     <div className="flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
       {screen !== "camera" && screen !== "calibration" && screen !== "confirmed" && (
@@ -189,7 +370,10 @@ function PatientView({
             message={message}
             setMessage={setMessage}
             onSpeak={(value) => {
-              setSpokenMessage(value || "I need help");
+              const spoken = value || "I need help";
+              const word = spoken.trim().toLowerCase();
+              setSpokenMessage(spoken);
+              setDictionaryWord(/^[a-z]+(?:'[a-z]+)?$/.test(word) ? word : null);
               setScreen("confirmed");
             }}
             speak={speak}
@@ -198,8 +382,14 @@ function PatientView({
         {screen === "confirmed" && (
           <Confirmed
             message={spokenMessage}
+            dictionaryWord={dictionaryWord}
+            onAddWord={() => {
+              if (dictionaryWord) addWordToLocalDictionary(dictionaryWord);
+              setDictionaryWord(null);
+            }}
             onAgain={() => {
               setMessage("");
+              setDictionaryWord(null);
               setScreen("needs");
             }}
           />
@@ -600,15 +790,17 @@ function ScanningKeyboard({
   onSpeak: (value: string) => void;
   speak: (text: string) => Promise<void>;
 }) {
+  const predictions = getKeyboardPredictions(message);
   const scanItems = useMemo<ScanItem[]>(
     () => [
-      ...SUGGESTIONS,
+      ...predictions,
       ...LETTERS,
       { label: "Space", value: " ", kind: "letter" },
       { label: "Undo", kind: "undo" },
       { label: "Speak", kind: "speak" },
+      { label: "Add word", kind: "dictionary" },
     ],
-    [],
+    [predictions],
   );
   const { index, setIndex } = useScanner(scanItems.length, true, 700);
   const [selected, setSelected] = useState<number | null>(null);
@@ -621,11 +813,33 @@ function ScanningKeyboard({
       if (item.kind === "undo") setMessage((current) => current.slice(0, -1));
       else if (item.kind === "speak") {
         void recordSelection({ text: message, source: "typed", how: "blink" });
+        rememberPredictionPhrase(message);
         // Speak immediately
         void speak(message);
         onSpeak(message);
-      } else if (item.kind === "suggestion") setMessage(item.value ?? item.label);
-      else setMessage((current) => current + (item.value ?? item.label));
+      } else if (item.kind === "dictionary") {
+        const word = message.trim().split(/\s+/).at(-1) ?? "";
+        addWordToLocalDictionary(word);
+      } else if (item.kind === "sentence") {
+        setMessage(item.value ?? item.label);
+      } else if (item.kind === "suggestion") {
+        setMessage((current) => {
+          if (!current.trim()) return item.value ?? item.label;
+          if (current.endsWith(" ")) return `${current}${item.value ?? item.label} `;
+          const words = current.split(/\s+/);
+          words[words.length - 1] = item.value ?? item.label;
+          return `${words.join(" ")} `;
+        });
+      } else if (item.kind === "letter") {
+        const value = item.value ?? item.label;
+        setMessage((current) => {
+          if (value === " ") return `${current} `;
+          const startsSentence = current.trim() === "" || /[.!?]\s*$/.test(current);
+          return current + (startsSentence ? value.toLowerCase().toUpperCase() : value.toLowerCase());
+        });
+      } else {
+        setMessage((current) => current + (item.value ?? item.label));
+      }
       window.setTimeout(() => setSelected(null), 320);
     },
     [message, onSpeak, scanItems, selected, setMessage, speak],
@@ -649,7 +863,7 @@ function ScanningKeyboard({
         </p>
       </div>
       <div className="mb-4 grid gap-2 md:grid-cols-3">
-        {SUGGESTIONS.map((item, suggestionIndex) => (
+        {predictions.map((item, suggestionIndex) => (
           <KeyboardKey
             key={item.label}
             label={item.label}
@@ -665,7 +879,7 @@ function ScanningKeyboard({
       </div>
       <div className="grid grid-cols-7 gap-1.5 sm:grid-cols-10 md:grid-cols-10 md:gap-2">
         {LETTERS.map((item, letterIndex) => {
-          const itemIndex = letterIndex + SUGGESTIONS.length;
+          const itemIndex = letterIndex + predictions.length;
           return (
             <KeyboardKey
               key={item.label}
@@ -679,14 +893,20 @@ function ScanningKeyboard({
             />
           );
         })}
-        {scanItems.slice(-3).map((item, offset) => {
-          const itemIndex = scanItems.length - 3 + offset;
+        {scanItems.slice(-4).map((item, offset) => {
+          const itemIndex = scanItems.length - 4 + offset;
           return (
             <KeyboardKey
               key={item.label}
               label={item.label}
               icon={
-                item.kind === "undo" ? <Undo2 /> : item.kind === "speak" ? <Volume2 /> : undefined
+                item.kind === "undo"
+                  ? <Undo2 />
+                  : item.kind === "speak"
+                    ? <Volume2 />
+                    : item.kind === "dictionary"
+                      ? <BookPlus />
+                      : undefined
               }
               active={index === itemIndex}
               selected={selected === itemIndex}
@@ -735,7 +955,17 @@ function KeyboardKey({
   );
 }
 
-function Confirmed({ message, onAgain }: { message: string; onAgain: () => void }) {
+function Confirmed({
+  message,
+  dictionaryWord,
+  onAddWord,
+  onAgain,
+}: {
+  message: string;
+  dictionaryWord: string | null;
+  onAddWord: () => void;
+  onAgain: () => void;
+}) {
   return (
     <section className="w-full max-w-4xl animate-fade-in text-center">
       <div className="mx-auto mb-8 grid size-16 place-items-center rounded-full bg-success text-success-foreground">
@@ -756,6 +986,11 @@ function Confirmed({ message, onAgain }: { message: string; onAgain: () => void 
         </div>
         <span className="font-medium">Speaking</span>
       </div>
+      {dictionaryWord && (
+        <Button variant="outline" className="mt-6" onClick={onAddWord}>
+          Add “{dictionaryWord}” to dictionary
+        </Button>
+      )}
       <Button size="lg" variant="secondary" className="mt-10" onClick={onAgain}>
         <RotateCcw /> New message
       </Button>
