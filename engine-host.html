@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Hidden window: runs the real blink/gaze engine when the React frontend is
+     the visible UI (see main.js). Never shown; see engineHostRenderer.js. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; media-src 'self' blob: mediastream:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self';">
+<title>Tacit engine host</title>
+</head>
+<body>
+<!-- Presage attaches its MediaStream here. Must stay a real, decoding video
+     element (not display:none) — kept off-screen rather than hidden so the
+     browser doesn't deprioritize frame decode. -->
+<video id="video" autoplay muted playsinline style="position:fixed;top:-9999px;left:-9999px;width:2px;height:2px;"></video>
+<script src="dist/engineHostRenderer.bundle.js"></script>
+</body>
+</html>
