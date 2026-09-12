@@ -4,7 +4,9 @@ import type {
   TacitCalibrationPhase,
   TacitCalibrationResult,
   TacitEyeState,
+  TacitGazeCalibrationPhase,
   TacitGazeDirection,
+  TacitVitalsCalibrationPhase,
 } from "@/types/tacit";
 
 export type EngineDiagnostics = {
@@ -14,12 +16,20 @@ export type EngineDiagnostics = {
   available: boolean;
   calibration: TacitCalibrationPhase | "idle";
   calibrationResult: TacitCalibrationResult | null;
+  /** "Look at the center of the screen" gaze centering — starts once blink
+   *  calibration is done (see routes/app.tsx's Calibration screen). */
+  gazeCalibration: TacitGazeCalibrationPhase | "idle";
+  gazeCenter: number | null;
+  /** Presage's own pulse/breathing confidence warm-up — see
+   *  engineHostRenderer.js's vitalsCalTick. Sticky once "ready". */
+  vitalsCalibration: TacitVitalsCalibrationPhase | "idle";
   eye: TacitEyeState;
   gaze: TacitGazeDirection;
   face: boolean;
   degraded: boolean;
   warnings: string[];
   vitals: { pulseBpm?: number; breathingBpm?: number } | null;
+  vitalsConfidence: { pulse: number | null; breathing: number | null };
   /** Rolling window of the calibrated closure signal, oldest first — feeds a
    *  live EAR-style chart. Empty until calibration has finished. */
   signalHistory: number[];
@@ -35,12 +45,16 @@ const IDLE: EngineDiagnostics = {
   available: false,
   calibration: "idle",
   calibrationResult: null,
+  gazeCalibration: "idle",
+  gazeCenter: null,
+  vitalsCalibration: "idle",
   eye: "open",
   gaze: "center",
   face: false,
   degraded: false,
   warnings: [],
   vitals: null,
+  vitalsConfidence: { pulse: null, breathing: null },
   signalHistory: [],
   selectCount: 0,
   ambiguousCount: 0,
@@ -73,6 +87,17 @@ export function useEngineDiagnostics() {
           case "calibration":
             next.calibration = event.payload.phase;
             if (event.payload.result) next.calibrationResult = event.payload.result;
+            break;
+          case "gazeCalibration":
+            next.gazeCalibration = event.payload.phase;
+            if (event.payload.center != null) next.gazeCenter = event.payload.center;
+            break;
+          case "vitalsCalibration":
+            next.vitalsCalibration = event.payload.phase;
+            next.vitalsConfidence = {
+              pulse: event.payload.pulseConfidence,
+              breathing: event.payload.breathingConfidence,
+            };
             break;
           case "frame":
             next.eye = event.payload.eye;
@@ -122,8 +147,9 @@ export function useEngineDiagnostics() {
   }, []);
 
   const calibrate = () => window.tacit?.sendEngineControl({ type: "calibrate" });
+  const calibrateGaze = () => window.tacit?.sendEngineControl({ type: "calibrateGaze" });
   const setEyeTracking = (enabled: boolean) =>
     window.tacit?.sendEngineControl({ type: "setEyeTracking", enabled });
 
-  return { ...state, calibrate, setEyeTracking };
+  return { ...state, calibrate, calibrateGaze, setEyeTracking };
 }

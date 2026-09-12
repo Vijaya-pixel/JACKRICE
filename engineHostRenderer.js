@@ -31,6 +31,76 @@ const ENGINE_OVERRIDES = {
   gazeHeadGain: 0,
 };
 
+// --- Gaze centering ("look at the middle of the screen") --------------------
+// blinkEngine.js only exposes a raw setGazeReference({centerX}) setter; the
+// "sample for a couple seconds while the user looks at center" flow is
+// app-level, same as yesnoApp.js's gcal object for the legacy UI. Reimplemented
+// here so the React side can trigger it over the control bridge and get a
+// calibration-style phase event back instead of raw frame data.
+const GAZE_CAL_MS = 2000;
+const GAZE_CAL_MIN_SAMPLES = 10;
+const gazeCal = { active: false, startAt: 0, samples: [] };
+
+function startGazeCalibration(engine, report) {
+  gazeCal.active = true;
+  gazeCal.startAt = performance.now();
+  gazeCal.samples = [];
+  report('gazeCalibration', { phase: 'sampling', remainingMs: GAZE_CAL_MS, sampleCount: 0 });
+}
+function gazeCalTick(engine, report, frame) {
+  if (!gazeCal.active) return;
+  const elapsed = frame.t - gazeCal.startAt;
+  if (elapsed > 500 && frame.face && frame.gazeRaw !== null && frame.eye === 'open') gazeCal.samples.push(frame.gazeRaw);
+  if (elapsed < GAZE_CAL_MS) {
+    report('gazeCalibration', { phase: 'sampling', remainingMs: GAZE_CAL_MS - elapsed, sampleCount: gazeCal.samples.length });
+    return;
+  }
+  gazeCal.active = false;
+  const sorted = [...gazeCal.samples].sort((a, b) => a - b);
+  if (sorted.length >= GAZE_CAL_MIN_SAMPLES) {
+    const center = sorted[Math.floor(sorted.length / 2)];
+    engine.setGazeReference({ centerX: center });
+    report('gazeCalibration', { phase: 'done', sampleCount: sorted.length, center, deadZone: engine.config.gazeDeadZone });
+  } else {
+    report('gazeCalibration', { phase: 'failed', sampleCount: sorted.length, reason: 'too few samples (face not tracked?)' });
+  }
+}
+
+// --- Vitals warm-up gate ------------------------------------------------
+// Presage's own cardio/breathing confidence (0-100) needs several seconds of
+// a held-still, well-lit face before it's trustworthy. Rather than showing
+// the first noisy bpm reading, wait for confidence to stay at/above
+// VITALS_READY_CONFIDENCE for VITALS_READY_HOLD_MS before telling consumers
+// the signal is ready. "timeout" is not sticky (sampling keeps going in the
+// background) — it just tells the UI this is taking longer than usual so it
+// can say so; "ready" IS sticky (vitalsCal.ready), so a momentary confidence
+// dip later doesn't yank the numbers back off the screen.
+const VITALS_READY_CONFIDENCE = 70;
+const VITALS_READY_HOLD_MS = 3000;
+const VITALS_TIMEOUT_MS = 20000;
+const vitalsCal = { startAt: 0, aboveSince: null, ready: false };
+
+function vitalsCalTick(report, vitals, now) {
+  if (vitalsCal.ready) return;
+  const pulseConfidence = vitals.pulseConfidence ?? 0;
+  if (pulseConfidence >= VITALS_READY_CONFIDENCE) {
+    if (vitalsCal.aboveSince === null) vitalsCal.aboveSince = now;
+  } else {
+    vitalsCal.aboveSince = null;
+  }
+  const elapsedMs = now - vitalsCal.startAt;
+  const breathingConfidence = vitals.breathingConfidence ?? null;
+  if (vitalsCal.aboveSince !== null && now - vitalsCal.aboveSince >= VITALS_READY_HOLD_MS) {
+    vitalsCal.ready = true;
+    report('vitalsCalibration', { phase: 'ready', elapsedMs, pulseConfidence, breathingConfidence });
+    return;
+  }
+  report('vitalsCalibration', {
+    phase: elapsedMs >= VITALS_TIMEOUT_MS ? 'timeout' : 'sampling',
+    elapsedMs, pulseConfidence, breathingConfidence,
+  });
+}
+
 // Every event the React side is allowed to see (see frontend/src/types/tacit.d.ts
 // for the matching payload shapes).
 const EVENT_NAMES = [
@@ -63,6 +133,9 @@ const EVENT_NAMES = [
   for (const name of EVENT_NAMES) {
     engine.on(name, payload => {
       if (name === 'frame') {
+        // Gaze centering needs frame.gazeRaw/face/eye, only present on the
+        // full payload — tick it before thinning.
+        gazeCalTick(engine, report, payload);
         // 'frame' fires ~30x/second with full landmark arrays; the React UI
         // only ever needs a lightweight status summary from it, so it's
         // thinned here rather than forwarding raw landmarks over IPC.
@@ -73,6 +146,7 @@ const EVENT_NAMES = [
         });
         return;
       }
+      if (name === 'vitals') vitalsCalTick(report, payload, payload.t);
       report(name, payload);
     });
   }
@@ -80,6 +154,8 @@ const EVENT_NAMES = [
   window.tacit.onEngineControl(async msg => {
     if (msg.type === 'calibrate') {
       engine.calibrate();
+    } else if (msg.type === 'calibrateGaze') {
+      startGazeCalibration(engine, report);
     } else if (msg.type === 'setEyeTracking') {
       eyeTrackingEnabled = !!msg.enabled;
       if (eyeTrackingEnabled && !gazeTracker) {
@@ -98,6 +174,7 @@ const EVENT_NAMES = [
   });
 
   try {
+    vitalsCal.startAt = performance.now();
     await engine.start(video);
   } catch (err) {
     report('error', { error: { message: err.message || String(err) } });

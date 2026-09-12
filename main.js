@@ -650,11 +650,18 @@ ipcMain.handle('tacit:db:vitals:listForSession', (_event, sessionId) => tacitDat
 let mainWindow = null;
 let engineHostWindow = null;
 
+// `win?.webContents.send(...)` isn't enough here: the engine-host window
+// keeps emitting ~30 events/sec even after the visible window is closed (see
+// createWindows() below), and `?.` only guards `win` being null/undefined —
+// not the BrowserWindow having been destroyed. Sending to a destroyed
+// window's webContents throws "Object has been destroyed" *inside this
+// ipcMain listener*, which is an uncaught exception in the main process
+// (crashes the whole app with Electron's default dialog).
 ipcMain.on('tacit:engine-event-report', (_event, msg) => {
-  mainWindow?.webContents.send('tacit:engine-event', msg);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tacit:engine-event', msg);
 });
 ipcMain.on('tacit:engine-control-send', (_event, msg) => {
-  engineHostWindow?.webContents.send('tacit:engine-control', msg);
+  if (engineHostWindow && !engineHostWindow.isDestroyed()) engineHostWindow.webContents.send('tacit:engine-control', msg);
 });
 
 // --- Window setup -------------------------------------------------------
@@ -838,9 +845,22 @@ function loadPackagedReactFrontend(win) {
 function createWindows() {
   if (LEGACY_UI) {
     mainWindow = createLegacyWindow();
+    mainWindow.on('closed', () => { mainWindow = null; });
   } else {
     engineHostWindow = createEngineHostWindow();
     mainWindow = createReactWindow();
+    engineHostWindow.on('closed', () => { engineHostWindow = null; });
+    // The engine host is pointless without a visible window to report to —
+    // and left running, it keeps the camera/Presage session alive forever
+    // and (on macOS, where closing the last visible window doesn't quit the
+    // app) makes Electron think a window is still open, since the hidden
+    // engine host itself counts as one. That silently breaks both
+    // window-all-closed and the dock icon's "reopen" (activate), which only
+    // recreates windows when BrowserWindow.getAllWindows() is empty.
+    mainWindow.on('closed', () => {
+      mainWindow = null;
+      if (engineHostWindow && !engineHostWindow.isDestroyed()) engineHostWindow.close();
+    });
   }
   // TACIT_SMOKE=<seconds>: quit automatically (for unattended smoke tests).
   if (process.env.TACIT_SMOKE) setTimeout(() => app.quit(), Number(process.env.TACIT_SMOKE) * 1000);
