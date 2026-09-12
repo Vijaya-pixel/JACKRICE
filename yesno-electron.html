@@ -23,6 +23,19 @@
     </header>
 
     <div class="contextRow">
+      <label for="patientSelect">Patient</label>
+      <div class="contextControl">
+        <select id="patientSelect"><option value="">Select a patient...</option></select>
+        <button id="newPatientBtn" type="button">New patient</button>
+      </div>
+      <div id="newPatientForm" class="patientForm" hidden>
+        <input id="newPatientFirstName" type="text" placeholder="First name">
+        <input id="newPatientId" type="text" placeholder="Patient ID / room">
+        <button id="addPatientBtn" type="button">Add</button>
+      </div>
+    </div>
+
+    <div class="contextRow">
       <label for="patientContext">Doctor or nurse context</label>
       <div class="contextControl">
         <input id="patientContext" type="text" placeholder="Example: post-op pain check, ALS clinic visit">

@@ -48,6 +48,9 @@ ipcMain.handle('tacit:apiKey', () => readApiKey());
 //   * responseSchema makes the reply a guaranteed JSON object, so the board
 //     options are parsed exactly instead of scraped out of prose.
 //   * The key belongs in the x-goog-api-key header, not the query string.
+const geminiHistory = require('./geminiHistory');
+const patientDirectory = require('./patientDirectory');
+
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const GEMINI_DEFAULT_MODEL = 'gemini-flash-latest';
 const GEMINI_BACKUP_MODEL = 'gemini-flash-lite-latest';
@@ -214,10 +217,12 @@ ipcMain.handle('tacit:geminiSuggestions', async (_event, context = {}) => {
   const configured = readEnvVar('GEMINI_MODEL') || GEMINI_DEFAULT_MODEL;
   const models = [...new Set([configured, GEMINI_DEFAULT_MODEL, GEMINI_BACKUP_MODEL])];
   const patientContext = String(context.patientContext || '').trim();
+  const historyNote = geminiHistory.summarizeForPrompt(context.patientId);
   const prompt = [
     patientContext ? `Clinical context: ${patientContext}` : 'Clinical context: general inpatient bedside conversation.',
+    historyNote,
     `Give the ${GEMINI_OPTION_COUNT} options this patient is most likely to need right now.`,
-  ].join('\n');
+  ].filter(Boolean).join('\n');
 
   try {
     const { model, options } = await geminiSuggest(apiKey, models, prompt);
@@ -228,6 +233,16 @@ ipcMain.handle('tacit:geminiSuggestions', async (_event, context = {}) => {
     return { source: 'fallback', options: [...GEMINI_FALLBACK_OPTIONS], error: error.message || String(error) };
   }
 });
+
+// Renderer reports each finalized selection here so future prompts can be
+// steered by what this patient has actually needed before.
+ipcMain.handle('tacit:recordSelection', (_event, entry = {}) => {
+  geminiHistory.recordSelection(entry);
+});
+
+// --- Patient directory ------------------------------------------------------
+ipcMain.handle('tacit:listPatients', () => patientDirectory.listPatients());
+ipcMain.handle('tacit:addPatient', (_event, entry = {}) => patientDirectory.findOrCreatePatient(entry));
 
 function createWindow() {
   const win = new BrowserWindow({
