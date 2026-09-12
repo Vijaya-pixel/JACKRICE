@@ -5,6 +5,7 @@
 import { createBlinkEngine } from './blinkEngine.js';
 import { createPresageSource } from './presageSource.js';
 import { createGazeTracker } from './gazeTracker.js';
+import { createElevenLabsService } from './elevenLabsService.js';
 import { initYesNo } from './yesnoApp.js';
 
 // Presage tuning. Landmarks + a binary blink flag (pulse at the deepest point
@@ -38,6 +39,17 @@ const ENGINE_OVERRIDES = {
     $('calib').textContent = 'No Presage API key. Create a .env file next to package.json with PRESAGE_API_KEY=... and restart (see .env.example).';
     return;
   }
+
+  // Initialize Eleven Labs text-to-speech service
+  const elevenLabsApiKey = window.tacit ? await window.tacit.getElevenLabsApiKey() : '';
+  const ttsService = createElevenLabsService({ apiKey: elevenLabsApiKey });
+  window.tacitTTS = ttsService; // Expose globally for yesnoApp.js
+  if (elevenLabsApiKey) {
+    console.log(`[tacit] Eleven Labs TTS enabled`);
+  } else {
+    console.log(`[tacit] Eleven Labs API key not found; TTS disabled`);
+  }
+
   // HYBRID when enabled: Presage = blink detection + vitals (+ landmarks for
   // EAR timing); MediaPipe supplies sub-pixel iris points for gaze only.
   // The default product flow is blink-only scanning, so the local gaze worker is

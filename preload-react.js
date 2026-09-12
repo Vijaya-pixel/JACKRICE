@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('tacit', {
   getTopPhrases: patientId => ipcRenderer.invoke('tacit:topPhrases', patientId),
   listPatients: () => ipcRenderer.invoke('tacit:listPatients'),
   addPatient: entry => ipcRenderer.invoke('tacit:addPatient', entry),
+  getElevenLabsApiKey: () => ipcRenderer.invoke('tacit:elevenLabsApiKey'),
 
   // --- Engine bridge (consumer side) ---
   // Subscribe to every blink/gaze/calibration/vitals/etc. event forwarded
