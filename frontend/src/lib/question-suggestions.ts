@@ -92,7 +92,7 @@ function normalizeCompletionList(completions: string[], typedText: string) {
       seen.add(key);
       return true;
     })
-    .slice(0, 4);
+    .slice(0, 3);
 }
 
 export async function generateKeyboardCompletions(

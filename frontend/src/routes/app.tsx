@@ -3,10 +3,13 @@ import {
   Activity,
   Camera,
   CameraOff,
+  ChevronDown,
   HeartPulse,
   Check,
   ClipboardList,
+  Pencil,
   RotateCcw,
+  Sparkles,
   Undo2,
   Volume2,
 } from "lucide-react";
@@ -938,11 +941,17 @@ function YesNoCommunicationScreen({
   session,
   onContinue,
   selectedQuestion,
+  questionSuggestions,
+  onSuggestionSelect,
+  onRegenerateSuggestions,
 }: {
   patient: Patient;
   session: Session;
   onContinue: () => void;
   selectedQuestion?: string | undefined;
+  questionSuggestions: QuestionSuggestionState;
+  onSuggestionSelect: (suggestion: SuggestedQuestion) => void;
+  onRegenerateSuggestions: () => Promise<void>;
 }) {
   const [question, setQuestion] = useState("");
   const [selectedResponse, setSelectedResponse] = useState<"YES" | "NO" | null>(null);
@@ -1032,21 +1041,23 @@ function YesNoCommunicationScreen({
       </div>
 
       <div className="mx-auto mt-7 max-w-3xl rounded-lg border border-border bg-card p-5 shadow-sm md:p-6">
-        <label className="block text-sm font-medium text-foreground">
-          Question
-          <input
-            value={question}
-            onChange={(event) => {
-              setQuestion(event.target.value);
-              setSelectedResponse(null);
-              setSaved(false);
-              setError(null);
-            }}
-            className="mt-2 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
-            placeholder="Example: Are you in pain?"
-            disabled={saving}
-          />
-        </label>
+        <PromptSuggestionInput
+          label="Question"
+          value={question}
+          placeholder="Example: Are you in pain?"
+          disabled={saving}
+          suggestions={questionSuggestions.questions}
+          loading={questionSuggestions.loading}
+          error={questionSuggestions.error}
+          onChange={(nextQuestion) => {
+            setQuestion(nextQuestion);
+            setSelectedResponse(null);
+            setSaved(false);
+            setError(null);
+          }}
+          onSelectSuggestion={onSuggestionSelect}
+          onRegenerate={onRegenerateSuggestions}
+        />
       </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2">
@@ -1113,7 +1124,7 @@ type KeyboardScanMode = "SUGGESTIONS" | "ROWS" | "COLUMNS";
 type KeyboardKeyValue = string | "SPACE" | "BACKSPACE" | "CLEAR" | "DONE";
 
 const KEYBOARD_SCAN_INTERVAL_MS = 1000;
-const KEYBOARD_COMPLETION_DEBOUNCE_MS = 650;
+const KEYBOARD_COMPLETION_DEBOUNCE_MS = 1200;
 const KEYBOARD_LAYOUT: KeyboardKeyValue[][] = [
   ["SPACE", "E", "A", "N", "D", "M"],
   ["T", "O", "S", "L", "W", "P"],
@@ -1131,13 +1142,32 @@ function useScanController({
   active,
   intervalMs,
   onSelect,
+  onCycleEnd,
 }: {
   itemCount: number;
   active: boolean;
   intervalMs: number;
   onSelect: (index: number) => void;
+  onCycleEnd?: () => void;
 }) {
-  const { index: currentScanIndex, setIndex } = useScanner(itemCount, active, intervalMs);
+  const [currentScanIndex, setCurrentScanIndex] = useState(0);
+
+  useEffect(() => {
+    if (!active || itemCount === 0) return;
+    const timer = window.setInterval(() => {
+      setCurrentScanIndex((current) => {
+        if (current >= itemCount - 1) {
+          onCycleEnd?.();
+          return 0;
+        }
+        return current + 1;
+      });
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [active, intervalMs, itemCount, onCycleEnd]);
+
+  useEffect(() => setCurrentScanIndex(0), [itemCount]);
+
   const selectCurrentItem = useCallback(() => {
     if (!active || itemCount === 0) return;
     onSelect(currentScanIndex);
@@ -1145,7 +1175,7 @@ function useScanController({
 
   useBlinkInput(selectCurrentItem);
 
-  return { currentScanIndex, setCurrentScanIndex: setIndex, selectCurrentItem };
+  return { currentScanIndex, setCurrentScanIndex, selectCurrentItem };
 }
 
 function CommunicationStageScreen({
@@ -1188,13 +1218,6 @@ function CommunicationStageScreen({
 
   return (
     <section className="w-full max-w-6xl animate-fade-in" aria-label="Communication">
-      <SuggestedQuestionsPanel
-        state={questionSuggestions}
-        selectedQuestion={selectedSuggestedQuestion}
-        onSelect={selectSuggestion}
-        onRegenerate={() => onRefreshQuestionSuggestions(patient, session)}
-      />
-
       <div className="mb-6 flex flex-wrap items-center justify-center gap-3">
         <Button
           type="button"
@@ -1217,6 +1240,9 @@ function CommunicationStageScreen({
           patient={patient}
           session={session}
           selectedQuestion={selectedSuggestedQuestion}
+          questionSuggestions={questionSuggestions}
+          onSuggestionSelect={selectSuggestion}
+          onRegenerateSuggestions={() => onRefreshQuestionSuggestions(patient, session)}
           onKeyboard={() => setMode("keyboard")}
           onContinue={() => {
             onMessage("Option board session complete");
@@ -1228,6 +1254,9 @@ function CommunicationStageScreen({
           patient={patient}
           session={session}
           selectedQuestion={selectedSuggestedQuestion?.question}
+          questionSuggestions={questionSuggestions}
+          onSuggestionSelect={selectSuggestion}
+          onRegenerateSuggestions={() => onRefreshQuestionSuggestions(patient, session)}
           onContinue={() => {
             onMessage("Yes/No session complete");
             onContinue();
@@ -1235,6 +1264,113 @@ function CommunicationStageScreen({
         />
       )}
     </section>
+  );
+}
+
+function PromptSuggestionInput({
+  label,
+  value,
+  placeholder,
+  disabled,
+  suggestions,
+  loading,
+  error,
+  onChange,
+  onSelectSuggestion,
+  onRegenerate,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  disabled?: boolean;
+  suggestions: SuggestedQuestion[];
+  loading: boolean;
+  error: string | null;
+  onChange: (value: string) => void;
+  onSelectSuggestion: (suggestion: SuggestedQuestion) => void;
+  onRegenerate: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <label className="block text-sm font-medium text-foreground">
+        {label}
+        <div className="relative mt-2">
+          <input
+            value={value}
+            onFocus={() => setOpen(true)}
+            onChange={(event) => {
+              onChange(event.target.value);
+              setOpen(true);
+            }}
+            className="w-full rounded-md border border-input bg-background px-4 py-3 pr-12 text-base text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+            placeholder={placeholder}
+            disabled={disabled}
+          />
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            className="absolute inset-y-1 right-1 grid w-10 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            aria-label="Show suggested questions"
+            disabled={disabled}
+          >
+            <ChevronDown className={cn("size-5 transition", open && "rotate-180")} />
+          </button>
+        </div>
+      </label>
+
+      {open && (
+        <div className="absolute z-30 mt-2 w-full rounded-lg border border-border bg-card p-2 shadow-xl">
+          <div className="mb-2 flex items-center justify-between gap-2 px-2 py-1">
+            <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              Suggested
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={loading}
+              onClick={() => void onRegenerate()}
+            >
+              {loading ? "Loading..." : "Refresh"}
+            </Button>
+          </div>
+          {error && (
+            <p className="mb-2 rounded-md border border-amber/40 bg-amber/10 px-2 py-1 text-xs text-amber">
+              {error}
+            </p>
+          )}
+          {suggestions.length === 0 && !loading ? (
+            <p className="px-2 py-3 text-sm text-muted-foreground">No suggestions yet.</p>
+          ) : (
+            <div className="grid gap-1">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={`${suggestion.type}-${suggestion.question}`}
+                  type="button"
+                  onClick={() => {
+                    onSelectSuggestion(suggestion);
+                    setOpen(false);
+                  }}
+                  className="flex items-start gap-2 rounded-md px-3 py-2 text-left transition hover:bg-muted"
+                >
+                  <Sparkles className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">
+                      {suggestion.question}
+                    </span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      Gemini · {suggestion.type === "yes_no" ? "Yes/No" : "Board"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1312,50 +1448,59 @@ function OptionBoardCommunicationScreen({
   patient,
   session,
   selectedQuestion,
+  questionSuggestions,
+  onSuggestionSelect,
+  onRegenerateSuggestions,
   onKeyboard,
   onContinue,
 }: {
   patient: Patient;
   session: Session;
   selectedQuestion: SuggestedQuestion | null;
+  questionSuggestions: QuestionSuggestionState;
+  onSuggestionSelect: (suggestion: SuggestedQuestion) => void;
+  onRegenerateSuggestions: () => Promise<void>;
   onKeyboard: () => void;
   onContinue: () => void;
 }) {
   const [prompt, setPrompt] = useState("What do you need?");
+  const [boardOptions, setBoardOptions] = useState<string[]>([
+    "Pain",
+    "Water",
+    "Position",
+    "Bathroom",
+    "Something Else",
+  ]);
   const [scanIntervalMs, setScanIntervalMs] = useState(1250);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingOptionIndex, setEditingOptionIndex] = useState<number | null>(null);
 
   const options = useMemo<Array<ScanOption<string>>>(() => {
-    const suggestedOptions =
-      selectedQuestion?.type === "option_board" ? selectedQuestion.boardOptions ?? [] : [];
-    const labels = [
-      ...suggestedOptions,
-      "Pain",
-      "Water",
-      "Position",
-      "Bathroom",
-      "Something Else",
-      "Keyboard",
-    ];
-    const uniqueLabels = Array.from(new Set(labels.map((label) => label.trim()).filter(Boolean))).slice(0, 6);
-    if (!uniqueLabels.includes("Keyboard")) {
-      uniqueLabels[uniqueLabels.length - 1] = "Keyboard";
-    }
-    return uniqueLabels.map((label) => ({ label, value: label }));
-  }, [selectedQuestion]);
+    const labels = boardOptions
+      .map((label) => label.trim())
+      .map((label, index) => label || `Option ${index + 1}`);
+    return [...labels, "Keyboard"].map((label) => ({ label, value: label }));
+  }, [boardOptions]);
 
   useEffect(() => {
     if (!selectedQuestion || selectedQuestion.type !== "option_board") return;
     setPrompt(selectedQuestion.question);
+    setBoardOptions((current) => {
+      const next = [...(selectedQuestion.boardOptions ?? [])]
+        .filter((label) => label.trim().toLowerCase() !== "keyboard")
+        .slice(0, 5);
+      while (next.length < 5) next.push(current[next.length] ?? `Option ${next.length + 1}`);
+      return next;
+    });
     setSelectedOption(null);
     setSaved(false);
     setError(null);
   }, [selectedQuestion]);
 
-  const canScan = !selectedOption && prompt.trim().length > 0 && !saving;
+  const canScan = !selectedOption && prompt.trim().length > 0 && !saving && editingOptionIndex === null;
 
   const chooseOption = useCallback(
     async (option: ScanOption<string>) => {
@@ -1409,6 +1554,7 @@ function OptionBoardCommunicationScreen({
     setSelectedOption(null);
     setSaved(false);
     setError(null);
+    setEditingOptionIndex(null);
     setIndex(0);
   }
 
@@ -1425,21 +1571,23 @@ function OptionBoardCommunicationScreen({
       </div>
 
       <div className="mx-auto mt-7 grid max-w-4xl gap-4 rounded-lg border border-border bg-card p-5 shadow-sm md:grid-cols-[1fr_12rem] md:p-6">
-        <label className="block text-sm font-medium text-foreground">
-          Prompt
-          <input
-            value={prompt}
-            onChange={(event) => {
-              setPrompt(event.target.value);
-              setSelectedOption(null);
-              setSaved(false);
-              setError(null);
-              setIndex(0);
-            }}
-            className="mt-2 w-full rounded-md border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-            placeholder="What do you need?"
-          />
-        </label>
+        <PromptSuggestionInput
+          label="Prompt"
+          value={prompt}
+          placeholder="What do you need?"
+          suggestions={questionSuggestions.questions}
+          loading={questionSuggestions.loading}
+          error={questionSuggestions.error}
+          onChange={(nextPrompt) => {
+            setPrompt(nextPrompt);
+            setSelectedOption(null);
+            setSaved(false);
+            setError(null);
+            setIndex(0);
+          }}
+          onSelectSuggestion={onSuggestionSelect}
+          onRegenerate={onRegenerateSuggestions}
+        />
 
         <label className="block text-sm font-medium text-foreground">
           Scan speed
@@ -1459,40 +1607,85 @@ function OptionBoardCommunicationScreen({
         {options.map((option, optionIndex) => {
           const active = canScan && highlightedIndex === optionIndex;
           const selected = selectedOption === option.value;
+          const editable = optionIndex < 5;
+          const editing = editingOptionIndex === optionIndex;
           return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => {
-                setIndex(optionIndex);
-                void chooseOption(option);
-              }}
-              disabled={saving || Boolean(selectedOption)}
+            <div
+              key={`${option.value}-${optionIndex}`}
               className={cn(
-                "min-h-40 rounded-lg border-2 bg-card px-5 py-8 text-center shadow-sm transition",
-                "focus:outline-none focus:ring-4 focus:ring-primary/25",
+                "relative min-h-40 rounded-lg border-2 bg-card text-center shadow-sm transition",
                 active
                   ? "scale-[1.02] border-primary bg-primary text-primary-foreground shadow-lg"
                   : "border-border text-foreground hover:border-primary/60",
                 selected && "border-success bg-success text-success-foreground shadow-lg",
                 selectedOption && !selected && "opacity-55",
               )}
-              aria-pressed={selected}
             >
-              <span className="block font-display text-3xl font-semibold md:text-4xl">
-                {option.label}
-              </span>
-              {active && !selected && (
-                <span className="mt-3 block text-sm font-semibold uppercase tracking-[0.16em]">
-                  Highlighted
-                </span>
+              {editable && (
+                <button
+                  type="button"
+                  onClick={() => setEditingOptionIndex(editing ? null : optionIndex)}
+                  className={cn(
+                    "absolute right-2 top-2 z-10 grid size-9 place-items-center rounded-md border transition",
+                    active || selected
+                      ? "border-white/50 bg-white/15 text-current hover:bg-white/25"
+                      : "border-border bg-background/80 text-muted-foreground hover:text-foreground",
+                  )}
+                  aria-label={`Edit option ${optionIndex + 1}`}
+                >
+                  <Pencil className="size-4" />
+                </button>
               )}
-              {selected && (
-                <span className="mt-3 block text-sm font-semibold uppercase tracking-[0.16em]">
-                  Selected {saved ? "✓" : saving ? "saving..." : ""}
-                </span>
+              {editing ? (
+                <div className="flex min-h-40 items-center px-5 py-8">
+                  <input
+                    autoFocus
+                    value={boardOptions[optionIndex] ?? ""}
+                    onChange={(event) => {
+                      const next = [...boardOptions];
+                      next[optionIndex] = event.target.value;
+                      setBoardOptions(next);
+                      setSelectedOption(null);
+                      setSaved(false);
+                      setError(null);
+                      setIndex(0);
+                    }}
+                    onBlur={() => setEditingOptionIndex(null)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === "Escape") {
+                        event.currentTarget.blur();
+                      }
+                    }}
+                    className="w-full rounded-md border border-input bg-background px-3 py-3 text-center text-xl font-semibold text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIndex(optionIndex);
+                    void chooseOption(option);
+                  }}
+                  disabled={saving || Boolean(selectedOption)}
+                  className="flex min-h-40 w-full flex-col items-center justify-center px-5 py-8 focus:outline-none focus:ring-4 focus:ring-primary/25"
+                  aria-pressed={selected}
+                >
+                  <span className="block font-display text-3xl font-semibold md:text-4xl">
+                    {option.label}
+                  </span>
+                  {active && !selected && (
+                    <span className="mt-3 block text-sm font-semibold uppercase tracking-[0.16em]">
+                      Highlighted
+                    </span>
+                  )}
+                  {selected && (
+                    <span className="mt-3 block text-sm font-semibold uppercase tracking-[0.16em]">
+                      Selected {saved ? "✓" : saving ? "saving..." : ""}
+                    </span>
+                  )}
+                </button>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
@@ -1538,10 +1731,11 @@ function BlinkKeyboardCommunicationScreen({
   const [suggestionLoading, setSuggestionLoading] = useState(false);
   const [suggestionError, setSuggestionError] = useState<string | null>(null);
   const suggestionCacheRef = useRef<Map<string, string[]>>(new Map());
-  const suggestionScanItems = useMemo(() => [...suggestions, "Keyboard"], [suggestions]);
+  const lastCompletionRequestRef = useRef("");
+  const suggestionScanItems = useMemo(() => suggestions.slice(0, 3), [suggestions]);
   const [message, setMessage] = useState("");
   const [completedMessage, setCompletedMessage] = useState<string | null>(null);
-  const [scanMode, setScanMode] = useState<KeyboardScanMode>("SUGGESTIONS");
+  const [scanMode, setScanMode] = useState<KeyboardScanMode>("ROWS");
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [scanIntervalMs, setScanIntervalMs] = useState(KEYBOARD_SCAN_INTERVAL_MS);
   const [intentionalBlinkCount, setIntentionalBlinkCount] = useState(0);
@@ -1573,6 +1767,7 @@ function BlinkKeyboardCommunicationScreen({
       setSuggestions([]);
       setSuggestionLoading(false);
       setSuggestionError(null);
+      lastCompletionRequestRef.current = "";
       return;
     }
 
@@ -1585,13 +1780,23 @@ function BlinkKeyboardCommunicationScreen({
     const cached = suggestionCacheRef.current.get(cacheKey);
     if (cached) {
       setSuggestions(cached);
+      if (cached.length > 0) setScanMode("SUGGESTIONS");
       setSuggestionLoading(false);
       setSuggestionError(null);
       return;
     }
 
+    const lastRequested = lastCompletionRequestRef.current;
+    const smallPrefixChange =
+      lastRequested &&
+      typedText.toLowerCase().startsWith(lastRequested.toLowerCase()) &&
+      typedText.length - lastRequested.length < 3 &&
+      !/[\s.!?]$/.test(typedText);
+    if (smallPrefixChange) return;
+
     let cancelled = false;
     const timer = window.setTimeout(() => {
+      lastCompletionRequestRef.current = typedText;
       setSuggestionLoading(true);
       setSuggestionError(null);
       buildSuggestedQuestionContext(patient, session)
@@ -1604,6 +1809,7 @@ function BlinkKeyboardCommunicationScreen({
           if (cancelled) return;
           suggestionCacheRef.current.set(cacheKey, response.completions);
           setSuggestions(response.completions);
+          if (response.completions.length > 0) setScanMode("SUGGESTIONS");
           setSuggestionError(response.error ?? null);
         })
         .catch((completionError) => {
@@ -1671,11 +1877,6 @@ function BlinkKeyboardCommunicationScreen({
       if (scanMode === "SUGGESTIONS") {
         const selectedSuggestion = suggestionScanItems[itemIndex];
         if (!selectedSuggestion) return;
-        if (selectedSuggestion === "Keyboard") {
-          setScanMode("ROWS");
-          setSelectedRowIndex(null);
-          return;
-        }
 
         ensureMessageStarted();
         const visiblePrefix = message.replace(/\s+/g, " ").trim();
@@ -1684,6 +1885,7 @@ function BlinkKeyboardCommunicationScreen({
             ? `${message}${selectedSuggestion.slice(visiblePrefix.length)}`
             : selectedSuggestion;
         setAiAssistedSelectionCount((current) => current + 1);
+        lastCompletionRequestRef.current = completedSuggestion.replace(/\s+/g, " ").trim();
         setMessage(completedSuggestion);
         setEstimatedSelectionsSaved((current) => (
           current + Math.max(
@@ -1746,6 +1948,12 @@ function BlinkKeyboardCommunicationScreen({
     active: !saving,
     intervalMs: scanIntervalMs,
     onSelect: selectCurrentItem,
+    onCycleEnd: scanMode === "SUGGESTIONS"
+      ? () => {
+          setScanMode("ROWS");
+          setSelectedRowIndex(null);
+        }
+      : undefined,
   });
 
   useEffect(() => {
@@ -1833,11 +2041,11 @@ function BlinkKeyboardCommunicationScreen({
               : suggestionError
                 ? `Predictive text unavailable: ${suggestionError}. Keyboard still works.`
                 : suggestions.length
-                  ? "Scan a completion or choose Keyboard to keep typing."
-                  : "Choose Keyboard to keep typing."}
+                  ? "Scan a completion, or wait for row scanning to continue."
+                  : "Keyboard row scanning is active."}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 md:grid-cols-3">
             {suggestionScanItems.map((suggestion, suggestionIndex) => {
               const active = scanMode === "SUGGESTIONS" && currentScanIndex === suggestionIndex;
               return (

@@ -143,7 +143,7 @@ const GEMINI_KEYBOARD_COMPLETION_RESPONSE_SCHEMA = {
     completions: {
       type: 'ARRAY',
       minItems: 0,
-      maxItems: 4,
+      maxItems: 3,
       items: {
         type: 'STRING',
         description: 'A short word or sentence completion preserving the patient-entered prefix.',
@@ -275,7 +275,7 @@ function normalizeKeyboardCompletions(list, typedText = '') {
     if (seen.has(key) || key === prefixKey) continue;
     seen.add(key);
     completions.push(value);
-    if (completions.length === 4) break;
+    if (completions.length === 3) break;
   }
   return completions;
 }
@@ -572,7 +572,7 @@ ipcMain.handle('tacit:geminiKeyboardCompletions', async (_event, context = {}) =
     : [];
 
   const prompt = [
-    'Return up to 4 likely completions for the patient text.',
+    'Return up to 3 likely completions for the patient text.',
     'The patient must choose a completion before it is inserted, and still confirms DONE later.',
     'Do not submit, speak, or finalize anything.',
     'Every completion must start with the already typed text exactly in meaning and visible prefix.',
