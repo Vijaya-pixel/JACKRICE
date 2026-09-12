@@ -17,6 +17,7 @@ import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { useBlinkInput } from "@/hooks/useBlinkInput";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
+import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 import { fetchNeedsSuggestions, recordSelection, useIsElectron } from "@/lib/tacit-api";
 import { cn } from "@/lib/utils";
 
@@ -103,6 +104,7 @@ function TacitApp() {
   const [message, setMessage] = useState("");
   const [spokenMessage, setSpokenMessage] = useState("");
   const electron = useIsElectron();
+  const tts = useElevenLabsTTS();
 
   return (
     <main className="min-h-svh bg-background text-foreground">
@@ -115,6 +117,7 @@ function TacitApp() {
         setMessage={setMessage}
         spokenMessage={spokenMessage}
         setSpokenMessage={setSpokenMessage}
+        speak={tts.speak}
       />
 
       <footer className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 px-4 py-2 text-center text-xs text-muted-foreground backdrop-blur-md">
@@ -133,6 +136,7 @@ function PatientView({
   setMessage,
   spokenMessage,
   setSpokenMessage,
+  speak,
 }: {
   screen: PatientScreen;
   setScreen: (screen: PatientScreen) => void;
@@ -140,6 +144,7 @@ function PatientView({
   setMessage: React.Dispatch<React.SetStateAction<string>>;
   spokenMessage: string;
   setSpokenMessage: (message: string) => void;
+  speak: (text: string) => Promise<void>;
 }) {
   return (
     <div className="flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
@@ -172,13 +177,14 @@ function PatientView({
       <div className="flex flex-1 items-center justify-center">
         {screen === "camera" && <CameraCheck onDone={() => setScreen("calibration")} />}
         {screen === "calibration" && <Calibration onDone={() => setScreen("yesno")} />}
-        {screen === "yesno" && <YesNo onDone={() => setScreen("needs")} />}
+        {screen === "yesno" && <YesNo onDone={() => setScreen("needs")} speak={speak} />}
         {screen === "needs" && (
           <NeedsBoard
             onSelect={(value) => {
               setSpokenMessage(value === "More time" ? "I need more time" : value);
               setScreen("confirmed");
             }}
+            speak={speak}
           />
         )}
         {screen === "keyboard" && (
@@ -189,6 +195,7 @@ function PatientView({
               setSpokenMessage(value || "I need help");
               setScreen("confirmed");
             }}
+            speak={speak}
           />
         )}
         {screen === "confirmed" && (
@@ -349,21 +356,24 @@ function Calibration({ onDone }: { onDone: () => void }) {
   );
 }
 
-function YesNo({ onDone }: { onDone: () => void }) {
+function YesNo({ onDone, speak }: { onDone: () => void; speak: (text: string) => Promise<void> }) {
   const { index, setIndex } = useScanner(2);
   const [selected, setSelected] = useState<number | null>(null);
   const choose = useCallback(
     (choice: number) => {
       if (selected !== null) return;
       setSelected(choice);
+      const text = choice === 0 ? "Yes" : "No";
       void recordSelection({
-        text: choice === 0 ? "Yes" : "No",
+        text,
         source: "suggested",
         how: "blink",
       });
+      // Speak immediately
+      void speak(text);
       window.setTimeout(onDone, 900);
     },
-    [onDone, selected],
+    [onDone, selected, speak],
   );
   useBlinkInput(() => choose(index));
 
@@ -394,7 +404,7 @@ function YesNo({ onDone }: { onDone: () => void }) {
   );
 }
 
-function NeedsBoard({ onSelect }: { onSelect: (value: string) => void }) {
+function NeedsBoard({ onSelect, speak }: { onSelect: (value: string) => void; speak: (text: string) => Promise<void> }) {
   // Electron: the first five slots come from Gemini (falls back to the
   // static needs below on error or in the browser); Yes/No/More time stay
   // fixed — same 8-slot grid shape and styling as before either way.
@@ -422,9 +432,11 @@ function NeedsBoard({ onSelect }: { onSelect: (value: string) => void }) {
       setSelected(choice);
       const label = items[choice]?.label ?? "";
       void recordSelection({ text: label, source: "suggested", how: "blink" });
+      // Speak immediately
+      void speak(label);
       window.setTimeout(() => onSelect(label), 850);
     },
-    [items, onSelect, selected],
+    [items, onSelect, selected, speak],
   );
   useBlinkInput(() => choose(index));
 
@@ -497,10 +509,12 @@ function ScanningKeyboard({
   message,
   setMessage,
   onSpeak,
+  speak,
 }: {
   message: string;
   setMessage: React.Dispatch<React.SetStateAction<string>>;
   onSpeak: (value: string) => void;
+  speak: (text: string) => Promise<void>;
 }) {
   const scanItems = useMemo<ScanItem[]>(
     () => [
@@ -523,12 +537,14 @@ function ScanningKeyboard({
       if (item.kind === "undo") setMessage((current) => current.slice(0, -1));
       else if (item.kind === "speak") {
         void recordSelection({ text: message, source: "typed", how: "blink" });
+        // Speak immediately
+        void speak(message);
         onSpeak(message);
       } else if (item.kind === "suggestion") setMessage(item.value ?? item.label);
       else setMessage((current) => current + (item.value ?? item.label));
       window.setTimeout(() => setSelected(null), 320);
     },
-    [message, onSpeak, scanItems, selected, setMessage],
+    [message, onSpeak, scanItems, selected, setMessage, speak],
   );
   useBlinkInput(() => choose(index));
 
