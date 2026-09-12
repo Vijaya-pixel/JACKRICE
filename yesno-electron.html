@@ -44,11 +44,17 @@
       <div id="suggestionStatus" class="hint">fallback suggestions ready</div>
     </div>
 
+    <div class="modeSwitcher" role="tablist" aria-label="Board mode">
+      <button id="modeYesNoBtn" type="button" class="modeBtn">Yes / No</button>
+      <button id="modeBoardBtn" type="button" class="modeBtn">Needs board</button>
+      <button id="modeKeyboardBtn" type="button" class="modeBtn">Keyboard</button>
+    </div>
+
     <div id="board" class="board" aria-label="Patient response options"></div>
 
-    <div id="typePanel" class="typePanel" hidden>
-      <input id="customText" type="text" placeholder="Type the patient's message">
-      <button id="sendCustomBtn" type="button">Send</button>
+    <div id="keyboard" class="keyboard" aria-label="Scanning keyboard" hidden>
+      <div class="keyboardDraft"><span id="keyboardDraftText">&nbsp;</span></div>
+      <div id="keyboardRows" class="keyboardRows"></div>
     </div>
 
     <section class="output">
@@ -85,7 +91,7 @@
       <div>gaze: <span id="gaze">disabled</span> <span class="dim">ref: <span id="gazeRef">disabled</span></span></div>
       <div id="bar"><div class="zone" id="zone"></div><div class="mark" id="mMid"></div><div id="dot"></div></div>
       <div class="buttonRow">
-        <button id="resetBtn" type="button">Reset scan</button>
+        <button id="resetBtn" type="button">Home / Reset</button>
         <button id="gazeCalBtn" type="button">Re-center gaze</button>
         <button id="recalBtn" type="button">Recalibrate blink</button>
       </div>

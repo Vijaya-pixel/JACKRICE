@@ -10,9 +10,19 @@
   --selected: #56d27b;
   --accent: #6fb7ff;
   --danger: #ff7474;
+  /* Overridden at runtime from SCAN_INTERVAL_MS (yesnoApp.js) so the dwell
+     indicator always matches the actual scan speed; this is just a fallback. */
+  --dwell-ms: 1500ms;
 }
 
 * { box-sizing: border-box; }
+
+/* Shared by the dwell-progress bars on .choice (tiers 1-2) and .kbCell
+   (tier 3) — a single definition so both stay visually identical. */
+@keyframes dwellFill {
+  from { width: 0%; }
+  to { width: 100%; }
+}
 
 body {
   margin: 0;
@@ -104,7 +114,7 @@ h1 {
   gap: 10px;
 }
 
-.contextControl input, .contextControl select, .typePanel input, .patientForm input {
+.contextControl input, .contextControl select, .patientForm input {
   width: 100%;
   border: 1px solid var(--line);
   background: #0f1215;
@@ -112,7 +122,7 @@ h1 {
   padding: 12px 14px;
 }
 
-.contextControl button, .typePanel button, .buttonRow button, .patientForm button {
+.contextControl button, .buttonRow button, .patientForm button {
   min-height: 44px;
   padding: 0 14px;
 }
@@ -135,12 +145,35 @@ h1 {
   font-size: 13px;
 }
 
+.modeSwitcher {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.modeBtn {
+  min-height: 44px;
+  padding: 0 10px;
+  font-weight: 700;
+}
+
+.modeBtn.active {
+  background: var(--accent);
+  color: #101112;
+  border-color: #ffffff;
+}
+
 .board {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(3, minmax(130px, 1fr));
   gap: 12px;
   min-height: 430px;
+}
+
+.board[hidden] {
+  display: none;
 }
 
 .choice {
@@ -155,6 +188,7 @@ h1 {
   border: 4px solid var(--line);
   background: var(--panel-2);
   text-align: center;
+  overflow: hidden;
 }
 
 .choiceIndex {
@@ -204,15 +238,116 @@ h1 {
   border-color: #ffffff;
 }
 
-.typePanel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 110px;
-  gap: 10px;
-  margin-top: 14px;
+/* Dwell-progress indicator: a bar that fills over the scan interval, so the
+   active cell visibly counts down to its own auto-advance instead of just
+   flatly swapping highlight. Driven entirely by the .highlight class already
+   being toggled in JS — no extra timers needed, see dwellFill below. */
+.choice::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  height: 5px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
 }
 
-.typePanel[hidden] {
+.choice.highlight::after {
+  opacity: 0.9;
+  animation: dwellFill var(--dwell-ms) linear forwards;
+}
+
+.keyboard {
+  display: grid;
+  gap: 12px;
+  min-height: 430px;
+}
+
+.keyboard[hidden] {
   display: none;
+}
+
+.keyboardDraft {
+  min-height: 56px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  font-size: 26px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.keyboardRows {
+  display: grid;
+  gap: 8px;
+}
+
+.kbRow {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.kbCell {
+  position: relative;
+  min-height: 54px;
+  padding: 8px;
+  border: 3px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 19px;
+  font-weight: 800;
+  text-transform: uppercase;
+  text-align: center;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.kbCell-predict, .kbCell-phrase {
+  text-transform: none;
+  background: #1c2b22;
+  border-color: #2f5c40;
+  font-size: 15px;
+}
+
+.kbCell-space, .kbCell-backspace, .kbCell-clear, .kbCell-speak, .kbCell-back {
+  text-transform: none;
+  background: #262b33;
+  font-size: 15px;
+}
+
+.kbCell.rowActive {
+  border-color: var(--accent);
+}
+
+.kbCell.highlight {
+  background: var(--focus);
+  color: #161616;
+  border-color: #ffffff;
+}
+
+/* Same dwell-progress indicator as the flat board (see .choice::after):
+   shown while a whole row is targeted (row phase) and while one cell within
+   it is targeted (column phase). */
+.kbCell::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0%;
+  height: 4px;
+  background: var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.kbCell.rowActive::after,
+.kbCell.highlight::after {
+  opacity: 0.9;
+  animation: dwellFill var(--dwell-ms) linear forwards;
 }
 
 .output {
@@ -384,12 +519,17 @@ h1 {
     flex-direction: column;
   }
 
-  .contextControl, .typePanel, .buttonRow, .patientForm {
+  .contextControl, .buttonRow, .patientForm, .modeSwitcher {
     grid-template-columns: 1fr;
   }
 
   .board {
     grid-template-columns: 1fr;
     grid-template-rows: repeat(6, 110px);
+  }
+
+  .kbRow {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
