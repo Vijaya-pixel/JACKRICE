@@ -246,41 +246,224 @@ ipcMain.handle('tacit:topPhrases', (_event, patientId) => geminiHistory.topPhras
 ipcMain.handle('tacit:listPatients', () => patientDirectory.listPatients());
 ipcMain.handle('tacit:addPatient', (_event, entry = {}) => patientDirectory.findOrCreatePatient(entry));
 
-function createWindow() {
+// --- Engine event relay ------------------------------------------------------
+// Hidden engine-host window -> main -> visible React window, and back for
+// control commands (calibrate, toggle eye tracking). See preload.js
+// (producer side, used by engine-host.html) and preload-react.js (consumer
+// side). No-ops in legacy mode, where there's only one window and the UI
+// talks to the engine in-process (see yesnoApp.js).
+let mainWindow = null;
+let engineHostWindow = null;
+
+ipcMain.on('tacit:engine-event-report', (_event, msg) => {
+  mainWindow?.webContents.send('tacit:engine-event', msg);
+});
+ipcMain.on('tacit:engine-control-send', (_event, msg) => {
+  engineHostWindow?.webContents.send('tacit:engine-control', msg);
+});
+
+// --- Window setup -------------------------------------------------------
+const LEGACY_UI = readEnvVar('TACIT_LEGACY_UI') === '1';
+
+function getDevServerUrl() {
+  // This project's Vite dev server defaults to port 8080 (falls back to 8081,
+  // 8082, ... if that's taken — see @lovable.dev/vite-tanstack-config's
+  // sandbox-detection plugin in frontend/vite.config.ts), NOT Vite's usual
+  // 5173. If "cd frontend; npm run dev" printed a different port, set
+  // TACIT_DEV_SERVER_URL to match before starting Electron.
+  return readEnvVar('TACIT_DEV_SERVER_URL') || 'http://localhost:8080/app';
+}
+function getProdPort() {
+  return Number(readEnvVar('TACIT_PROD_PORT')) || 4173;
+}
+
+// Camera permission is granted to: our own bundled file:// pages (legacy UI,
+// engine-host), the Vite dev server origin, and the local packaged-frontend
+// server origin. Nothing else ever gets the camera.
+function isAllowedOrigin(url) {
+  if (url.startsWith('file://')) return true;
+  try {
+    if (new URL(url).origin === new URL(getDevServerUrl()).origin) return true;
+  } catch (_) { /* not a URL we recognize */ }
+  return url.startsWith(`http://localhost:${getProdPort()}`);
+}
+
+// win.loadURL()'s own promise only rejects on network-level failure (DNS,
+// connection refused, ...) — it resolves normally for an HTTP error response
+// (e.g. a 404), because navigation still "succeeded" as far as Chromium is
+// concerned. That's silently wrong for us: if anything else is listening on
+// the target port/path, the window renders that 404 instead of ever falling
+// back. This watches both did-fail-load (network failure) and did-navigate's
+// httpResponseCode (HTTP-level failure) and falls back to the legacy UI on
+// either, exactly once.
+function loadWithFallback(win, url, label) {
+  let settled = false;
+  const cleanup = () => {
+    win.webContents.removeListener('did-fail-load', onFail);
+    win.webContents.removeListener('did-navigate', onNav);
+  };
+  const fallback = reason => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    console.error(`[tacit] ${label}: ${reason} — falling back to the legacy UI`);
+    win.loadFile(path.join(__dirname, 'yesno-electron.html'));
+  };
+  const onFail = (_e, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) return; // ignore subframes / our own aborted loadFile()
+    fallback(`could not load ${validatedURL || url}: ${errorDescription} (${errorCode})`);
+  };
+  const onNav = (_e, navUrl, httpResponseCode) => {
+    if (settled) return;
+    if (httpResponseCode != null && httpResponseCode >= 400) {
+      fallback(`${navUrl} responded HTTP ${httpResponseCode}`);
+    } else {
+      settled = true; // real success — stop watching this load
+      cleanup();
+    }
+  };
+  win.webContents.on('did-fail-load', onFail);
+  win.webContents.on('did-navigate', onNav);
+  win.loadURL(url).catch(err => fallback(`loadURL threw: ${err.message}`));
+}
+
+function attachCommonWindowLogging(win, tag) {
+  win.webContents.on('console-message', (e, level, message, line, sourceId) => {
+    console.log(`[${tag}${level >= 2 ? ':ERR' : ''}] ${message}${sourceId ? ` (${path.basename(sourceId)}:${line})` : ''}`);
+  });
+  win.webContents.on('preload-error', (e, p, err) => console.error(`[${tag} preload-error]`, p, err));
+}
+
+// Legacy path: single window, camera + UI together, exactly as before.
+// Untouched behavior — this is the TACIT_LEGACY_UI=1 fallback.
+function createLegacyWindow() {
   const win = new BrowserWindow({
     width: 1400, height: 800, backgroundColor: '#111111',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      // sandbox off so preload.js can require the SDK's preload bridge.
       sandbox: false,
     },
   });
   bindSmartSpectraIpc(win);
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', e => e.preventDefault());
-  // Renderer console -> terminal (handy since the renderer has no terminal).
-  win.webContents.on('console-message', (e, level, message, line, sourceId) => {
-    console.log(`[renderer${level >= 2 ? ':ERR' : ''}] ${message}${sourceId ? ` (${path.basename(sourceId)}:${line})` : ''}`);
-  });
-  win.webContents.on('preload-error', (e, p, err) => console.error('[preload-error]', p, err));
+  attachCommonWindowLogging(win, 'renderer');
   win.loadFile(path.join(__dirname, 'yesno-electron.html'));
+  return win;
+}
+
+// Hidden window: real camera + blinkEngine, forwards events over IPC. Never
+// shown. backgroundThrottling: false keeps it running while occluded/hidden.
+function createEngineHostWindow() {
+  const win = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+  bindSmartSpectraIpc(win);
+  attachCommonWindowLogging(win, 'engine-host');
+  win.loadFile(path.join(__dirname, 'engine-host.html'));
+  return win;
+}
+
+// Visible window: the React frontend. Dev loads the Vite dev server;
+// production spawns and loads the built frontend's server. Either falls back
+// to the legacy HTML UI if the React app can't be reached, so the app is
+// never left on a blank window.
+function createReactWindow() {
+  const win = new BrowserWindow({
+    width: 1400, height: 900, backgroundColor: '#111111',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload-react.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // Same-origin navigation (TanStack Router, dev-server HMR reloads) is
+  // unaffected — will-navigate only fires for actual document navigations.
+  // This just stops the window from following a link out to an external site.
+  win.webContents.on('will-navigate', (e, url) => { if (!isAllowedOrigin(url)) e.preventDefault(); });
+  attachCommonWindowLogging(win, 'react');
+
+  if (app.isPackaged) {
+    loadPackagedReactFrontend(win);
+  } else {
+    const devServerUrl = getDevServerUrl();
+    console.log(`[tacit] loading React dev server at ${devServerUrl} — if this 404s, your Vite server is probably on a different port; set TACIT_DEV_SERVER_URL to match`);
+    loadWithFallback(win, devServerUrl, 'dev server');
+  }
+  return win;
+}
+
+// Production loading is best-effort and only lightly verified: `npm run
+// build` in frontend/ was actually run once while writing this (see the repo
+// history/PR notes), confirming two things —
+//   1. the build output IS at frontend/.output/server/index.mjs, as guessed.
+//   2. that file is a Cloudflare Workers-style `{ fetch(req) }` module (its
+//      vite.config.ts targets the "cloudflare-module" Nitro preset — see the
+//      AGENTS.md-equivalent comment at the top of that file), NOT a Node
+//      server with .listen(). Spawning it directly with plain `node` would
+//      define the handler and then exit — nothing would ever bind a port.
+// The build's own output names the supported local-preview path instead:
+// `npx vite preview`, which Nitro/Vite wire up to actually serve this build
+// over HTTP. That's what's spawned below. This has NOT been verified inside
+// an actual electron-builder packaged app — there is no electron-builder
+// config in this repo yet, and a packaged build would additionally need
+// frontend/.output and frontend/node_modules bundled as extraResources for
+// `vite preview` to even be runnable post-package. Treat this path as
+// "works for a local production smoke-test", not "ready to ship".
+let packagedServerProcess = null;
+function loadPackagedReactFrontend(win) {
+  const { spawn } = require('child_process');
+  const frontendDir = path.join(process.resourcesPath, 'frontend');
+  const outputDir = path.join(frontendDir, '.output');
+  if (!fs.existsSync(outputDir)) {
+    console.error(`[tacit] no frontend build found at ${outputDir} (run "npm run build" in frontend/) — falling back to legacy UI`);
+    win.loadFile(path.join(__dirname, 'yesno-electron.html'));
+    return;
+  }
+  const port = getProdPort();
+  packagedServerProcess = spawn(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['vite', 'preview', '--port', String(port), '--strictPort'], {
+    cwd: frontendDir,
+    stdio: 'inherit',
+  });
+  packagedServerProcess.on('error', err => console.error('[tacit] packaged frontend preview server failed to start:', err.message));
+  setTimeout(() => loadWithFallback(win, `http://localhost:${port}/app`, 'packaged preview server'), 1500);
+}
+
+function createWindows() {
+  if (LEGACY_UI) {
+    mainWindow = createLegacyWindow();
+  } else {
+    engineHostWindow = createEngineHostWindow();
+    mainWindow = createReactWindow();
+  }
   // TACIT_SMOKE=<seconds>: quit automatically (for unattended smoke tests).
   if (process.env.TACIT_SMOKE) setTimeout(() => app.quit(), Number(process.env.TACIT_SMOKE) * 1000);
-  if (process.env.TACIT_DEVTOOLS === '1' || process.env.SMARTSPECTRA_DIAGNOSTICS === '1') win.webContents.openDevTools({ mode: 'detach' });
+  if (process.env.TACIT_DEVTOOLS === '1' || process.env.SMARTSPECTRA_DIAGNOSTICS === '1') mainWindow.webContents.openDevTools({ mode: 'detach' });
 }
 
 app.whenReady().then(() => {
-  console.log(`[tacit] main ready — electron ${process.versions.electron}, api key ${readApiKey() ? 'present' : 'absent (.env missing?)'}`);
-  // Camera only, for our own file:// page only.
+  console.log(`[tacit] main ready — electron ${process.versions.electron}, mode ${LEGACY_UI ? 'legacy' : 'react'}, api key ${readApiKey() ? 'present' : 'absent (.env missing?)'}`);
   session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
     const url = (details && details.requestingUrl) || (wc && wc.getURL()) || '';
     const mediaTypes = (details && details.mediaTypes) || [];
     const cameraOnly = mediaTypes.length === 1 && mediaTypes[0] === 'video';
-    callback(permission === 'media' && cameraOnly && url.startsWith('file://'));
+    callback(permission === 'media' && cameraOnly && isAllowedOrigin(url));
   });
-  createWindow();
-  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  createWindows();
+  app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindows(); });
 });
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => {
+  if (packagedServerProcess) { packagedServerProcess.kill(); packagedServerProcess = null; }
+  if (process.platform !== 'darwin') app.quit();
+});
