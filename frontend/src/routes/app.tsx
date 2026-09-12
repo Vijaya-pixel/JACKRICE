@@ -5,6 +5,7 @@ import {
   CameraOff,
   HeartPulse,
   Check,
+  ClipboardList,
   Keyboard,
   RotateCcw,
   Undo2,
@@ -17,8 +18,10 @@ import { Button } from "@/components/ui/button";
 import { useBlinkInput } from "@/hooks/useBlinkInput";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
 import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
+import { localDb } from "@/lib/local-db";
 import { fetchNeedsSuggestions, recordSelection, useIsElectron } from "@/lib/tacit-api";
 import { cn } from "@/lib/utils";
+import type { Patient } from "@/types/tacit";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -46,12 +49,24 @@ function AppRoute() {
   return <TacitApp />;
 }
 
-type PatientScreen = "camera" | "calibration" | "yesno" | "needs" | "keyboard" | "confirmed";
+type PatientScreen =
+  | "identify"
+  | "context"
+  | "setup"
+  | "camera"
+  | "calibration"
+  | "yesno"
+  | "needs"
+  | "keyboard"
+  | "confirmed";
 type ScanItem = {
   label: string;
   value?: string;
   kind?: "letter" | "suggestion" | "undo" | "speak";
 };
+
+const ACTIVE_PATIENT_KEY = "tacit:activePatientId";
+const ACTIVE_SESSION_KEY = "tacit:activeSessionId";
 
 const NEEDS: ScanItem[] = [
   { label: "Pain" },
@@ -95,11 +110,69 @@ function useScanner(length: number, active = true, speed = 1500) {
 }
 
 function TacitApp() {
-  const [screen, setScreen] = useState<PatientScreen>("camera");
+  const [screen, setScreen] = useState<PatientScreen>("identify");
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [restoringPatient, setRestoringPatient] = useState(true);
   const [message, setMessage] = useState("");
   const [spokenMessage, setSpokenMessage] = useState("");
   const electron = useIsElectron();
   const tts = useElevenLabsTTS();
+
+  useEffect(() => {
+    let cancelled = false;
+    const savedPatientId = window.sessionStorage.getItem(ACTIVE_PATIENT_KEY);
+    if (!savedPatientId) {
+      setRestoringPatient(false);
+      return;
+    }
+
+    localDb
+      .getPatient(savedPatientId)
+      .then((patient) => {
+        if (cancelled) return;
+        if (patient) {
+          setSelectedPatient(patient);
+          const savedSessionId = window.sessionStorage.getItem(ACTIVE_SESSION_KEY);
+          if (savedSessionId) {
+            setActiveSessionId(savedSessionId);
+            setScreen("setup");
+          } else {
+            setScreen("context");
+          }
+        } else {
+          window.sessionStorage.removeItem(ACTIVE_PATIENT_KEY);
+          window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          window.sessionStorage.removeItem(ACTIVE_PATIENT_KEY);
+          window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setRestoringPatient(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function selectPatient(patient: Patient) {
+    setSelectedPatient(patient);
+    setActiveSessionId(null);
+    window.sessionStorage.setItem(ACTIVE_PATIENT_KEY, patient.id);
+    window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
+    setScreen("context");
+  }
+
+  function startSession(sessionId: string) {
+    setActiveSessionId(sessionId);
+    window.sessionStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+    setScreen("setup");
+  }
 
   return (
     <main className="min-h-svh bg-background text-foreground">
@@ -108,6 +181,11 @@ function TacitApp() {
       <PatientView
         screen={screen}
         setScreen={setScreen}
+        selectedPatient={selectedPatient}
+        activeSessionId={activeSessionId}
+        restoringPatient={restoringPatient}
+        onPatientIdentified={selectPatient}
+        onSessionStarted={startSession}
         message={message}
         setMessage={setMessage}
         spokenMessage={spokenMessage}
@@ -127,6 +205,11 @@ function TacitApp() {
 function PatientView({
   screen,
   setScreen,
+  selectedPatient,
+  activeSessionId,
+  restoringPatient,
+  onPatientIdentified,
+  onSessionStarted,
   message,
   setMessage,
   spokenMessage,
@@ -135,6 +218,11 @@ function PatientView({
 }: {
   screen: PatientScreen;
   setScreen: (screen: PatientScreen) => void;
+  selectedPatient: Patient | null;
+  activeSessionId: string | null;
+  restoringPatient: boolean;
+  onPatientIdentified: (patient: Patient) => void;
+  onSessionStarted: (sessionId: string) => void;
   message: string;
   setMessage: React.Dispatch<React.SetStateAction<string>>;
   spokenMessage: string;
@@ -143,13 +231,20 @@ function PatientView({
 }) {
   return (
     <div className="flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
-      {screen !== "camera" && screen !== "calibration" && screen !== "confirmed" && (
+      {screen !== "identify" &&
+        screen !== "context" &&
+        screen !== "setup" &&
+        screen !== "camera" &&
+        screen !== "calibration" &&
+        screen !== "confirmed" && (
         <nav
           className="mx-auto mb-6 flex w-full max-w-6xl items-center justify-between"
           aria-label="Communication modes"
         >
           <p className="text-sm font-medium text-muted-foreground">
-            Blink to select the highlighted choice
+            {selectedPatient
+              ? `${selectedPatient.name} (${selectedPatient.patientId}) · blink to select the highlighted choice`
+              : "Blink to select the highlighted choice"}
           </p>
           <div className="flex gap-2">
             <Button
@@ -170,11 +265,36 @@ function PatientView({
         </nav>
       )}
       <div className="flex flex-1 items-center justify-center">
+        {screen === "identify" && (
+          <PatientIdentification
+            restoring={restoringPatient}
+            onIdentified={onPatientIdentified}
+          />
+        )}
+        {screen === "context" && selectedPatient && (
+          <PatientContextScreen
+            patient={selectedPatient}
+            onSessionStarted={onSessionStarted}
+          />
+        )}
+        {screen === "setup" && selectedPatient && (
+          <CommunicationSetupPlaceholder
+            patient={selectedPatient}
+            sessionId={activeSessionId}
+          />
+        )}
         {screen === "camera" && <CameraCheck onDone={() => setScreen("calibration")} />}
         {screen === "calibration" && <Calibration onDone={() => setScreen("yesno")} />}
-        {screen === "yesno" && <YesNo onDone={() => setScreen("needs")} speak={speak} />}
+        {screen === "yesno" && (
+          <YesNo
+            patient={selectedPatient}
+            onDone={() => setScreen("needs")}
+            speak={speak}
+          />
+        )}
         {screen === "needs" && (
           <NeedsBoard
+            patient={selectedPatient}
             onSelect={(value) => {
               setSpokenMessage(value === "More time" ? "I need more time" : value);
               setScreen("confirmed");
@@ -184,6 +304,7 @@ function PatientView({
         )}
         {screen === "keyboard" && (
           <ScanningKeyboard
+            patient={selectedPatient}
             message={message}
             setMessage={setMessage}
             onSpeak={(value) => {
@@ -204,6 +325,108 @@ function PatientView({
         )}
       </div>
     </div>
+  );
+}
+
+function PatientIdentification({
+  restoring,
+  onIdentified,
+}: {
+  restoring: boolean;
+  onIdentified: (patient: Patient) => void;
+}) {
+  const [name, setName] = useState("");
+  const [patientId, setPatientId] = useState("");
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const continueTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (continueTimer.current) window.clearTimeout(continueTimer.current);
+    };
+  }, []);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    const trimmedPatientId = patientId.trim();
+
+    setError(null);
+    setStatus(null);
+
+    if (!trimmedName || !trimmedPatientId) {
+      setError("Enter both patient name and patient ID.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const existing = await localDb.getPatientByPatientId(trimmedPatientId);
+      const patient =
+        existing ?? (await localDb.createPatient({ name: trimmedName, patientId: trimmedPatientId }));
+
+      if (!patient) {
+        setError("Could not save this patient. Please try again.");
+        return;
+      }
+
+      setStatus(existing ? "Existing patient found" : "New patient saved");
+      continueTimer.current = window.setTimeout(() => onIdentified(patient), 700);
+    } catch (dbError) {
+      console.error("[tacit] patient identification failed:", dbError);
+      setError("Patient lookup failed. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="w-full max-w-xl animate-fade-in" aria-label="Patient identification">
+      <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+        Patient identification
+      </p>
+      <div className="rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
+        <h1 className="font-display text-3xl font-semibold md:text-4xl">Start patient session</h1>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+          Enter the patient details once. TACIT will reuse an existing local record when the patient ID already exists.
+        </p>
+
+        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+          <label className="block text-sm font-medium text-foreground">
+            Patient Name
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              placeholder="Example: Jane Smith"
+              autoComplete="off"
+              disabled={submitting || restoring}
+            />
+          </label>
+
+          <label className="block text-sm font-medium text-foreground">
+            Patient ID
+            <input
+              value={patientId}
+              onChange={(event) => setPatientId(event.target.value)}
+              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              placeholder="Example: MRN-1042"
+              autoComplete="off"
+              disabled={submitting || restoring}
+            />
+          </label>
+
+          {error && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
+          {status && <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">{status}</p>}
+
+          <Button type="submit" size="lg" className="w-full" disabled={submitting || restoring}>
+            {restoring ? "Loading patient..." : submitting ? "Checking..." : "Continue"}
+          </Button>
+        </form>
+      </div>
+    </section>
   );
 }
 
@@ -351,7 +574,15 @@ function Calibration({ onDone }: { onDone: () => void }) {
   );
 }
 
-function YesNo({ onDone, speak }: { onDone: () => void; speak: (text: string) => Promise<void> }) {
+function YesNo({
+  patient,
+  onDone,
+  speak,
+}: {
+  patient: Patient | null;
+  onDone: () => void;
+  speak: (text: string) => Promise<void>;
+}) {
   const { index, setIndex } = useScanner(2);
   const [selected, setSelected] = useState<number | null>(null);
   const choose = useCallback(
@@ -360,6 +591,7 @@ function YesNo({ onDone, speak }: { onDone: () => void; speak: (text: string) =>
       setSelected(choice);
       const text = choice === 0 ? "Yes" : "No";
       void recordSelection({
+        ...(patient ? { patientId: patient.patientId } : {}),
         text,
         source: "suggested",
         how: "blink",
@@ -368,7 +600,7 @@ function YesNo({ onDone, speak }: { onDone: () => void; speak: (text: string) =>
       void speak(text);
       window.setTimeout(onDone, 900);
     },
-    [onDone, selected, speak],
+    [onDone, patient?.patientId, selected, speak],
   );
   useBlinkInput(() => choose(index));
 
@@ -399,7 +631,15 @@ function YesNo({ onDone, speak }: { onDone: () => void; speak: (text: string) =>
   );
 }
 
-function NeedsBoard({ onSelect, speak }: { onSelect: (value: string) => void; speak: (text: string) => Promise<void> }) {
+function NeedsBoard({
+  patient,
+  onSelect,
+  speak,
+}: {
+  patient: Patient | null;
+  onSelect: (value: string) => void;
+  speak: (text: string) => Promise<void>;
+}) {
   // Electron: the first five slots come from Gemini (falls back to the
   // static needs below on error or in the browser); Yes/No/More time stay
   // fixed — same 8-slot grid shape and styling as before either way.
@@ -408,7 +648,7 @@ function NeedsBoard({ onSelect, speak }: { onSelect: (value: string) => void; sp
 
   useEffect(() => {
     let cancelled = false;
-    fetchNeedsSuggestions({}).then((response) => {
+    fetchNeedsSuggestions(patient ? { patientId: patient.patientId } : {}).then((response) => {
       if (cancelled) return;
       setSuggestionSource(response.source);
       const suggested = response.options.slice(0, 5).map((label) => ({ label }));
@@ -417,7 +657,7 @@ function NeedsBoard({ onSelect, speak }: { onSelect: (value: string) => void; sp
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [patient?.patientId]);
 
   const { index, setIndex } = useScanner(items.length);
   const [selected, setSelected] = useState<number | null>(null);
@@ -426,12 +666,17 @@ function NeedsBoard({ onSelect, speak }: { onSelect: (value: string) => void; sp
       if (selected !== null) return;
       setSelected(choice);
       const label = items[choice]?.label ?? "";
-      void recordSelection({ text: label, source: "suggested", how: "blink" });
+      void recordSelection({
+        ...(patient ? { patientId: patient.patientId } : {}),
+        text: label,
+        source: "suggested",
+        how: "blink",
+      });
       // Speak immediately
       void speak(label);
       window.setTimeout(() => onSelect(label), 850);
     },
-    [items, onSelect, selected, speak],
+    [items, onSelect, patient?.patientId, selected, speak],
   );
   useBlinkInput(() => choose(index));
 
@@ -501,11 +746,13 @@ function ScanButton({
 }
 
 function ScanningKeyboard({
+  patient,
   message,
   setMessage,
   onSpeak,
   speak,
 }: {
+  patient: Patient | null;
   message: string;
   setMessage: React.Dispatch<React.SetStateAction<string>>;
   onSpeak: (value: string) => void;
@@ -531,7 +778,12 @@ function ScanningKeyboard({
       setSelected(choice);
       if (item.kind === "undo") setMessage((current) => current.slice(0, -1));
       else if (item.kind === "speak") {
-        void recordSelection({ text: message, source: "typed", how: "blink" });
+        void recordSelection({
+          ...(patient ? { patientId: patient.patientId } : {}),
+          text: message,
+          source: "typed",
+          how: "blink",
+        });
         // Speak immediately
         void speak(message);
         onSpeak(message);
@@ -539,7 +791,7 @@ function ScanningKeyboard({
       else setMessage((current) => current + (item.value ?? item.label));
       window.setTimeout(() => setSelected(null), 320);
     },
-    [message, onSpeak, scanItems, selected, setMessage, speak],
+    [message, onSpeak, patient?.patientId, scanItems, selected, setMessage, speak],
   );
   useBlinkInput(() => choose(index));
 
