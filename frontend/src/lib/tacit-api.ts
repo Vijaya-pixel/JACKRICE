@@ -11,11 +11,12 @@ export function isElectron(): boolean {
 }
 
 /**
- * Hydration-safe isElectron() for use during render: this app is
- * server-rendered, where `window` doesn't exist, so returning isElectron()
- * directly during render would mismatch between the server pass and an
- * Electron client's first paint. Starts false on every render pass (server
- * and client), then syncs once mounted.
+ * Hydration-safe isElectron() for use during render (same pattern as
+ * useRole() in lib/role.ts): this app is server-rendered, where `window`
+ * doesn't exist, so returning isElectron() directly during render would
+ * mismatch between the server pass and an Electron client's first paint.
+ * Starts false on every render pass (server and client), then syncs once
+ * mounted.
  */
 export function useIsElectron(): boolean {
   const [electron, setElectron] = useState(false);
