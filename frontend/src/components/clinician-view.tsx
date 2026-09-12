@@ -1,4 +1,4 @@
-import { Activity } from "lucide-react";
+import { Activity, AlertTriangle, HeartPulse, Wind } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
@@ -24,6 +24,8 @@ export function ClinicianView() {
     Array.from({ length: 72 }, (_, i) => 0.29 + Math.sin(i / 5) * 0.015),
   );
   const [mockFalseActivations, setMockFalseActivations] = useState(2);
+  const [mockVitals, setMockVitals] = useState({ pulseBpm: 74, breathingBpm: 15 });
+  const [mockWarning, setMockWarning] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
 
   // Browser mode, or Electron before the engine has reported in: keep the
@@ -43,6 +45,34 @@ export function ClinicianView() {
     }, 180);
     return () => window.clearInterval(timer);
   }, [diagnostics.available]);
+
+  // Vitals and warnings tick on a slower, human-scale cadence — no need for
+  // the 180ms chart resolution. Also browser-mode only.
+  useEffect(() => {
+    if (diagnostics.available) return;
+    const timer = window.setInterval(() => {
+      setMockVitals((current) => ({
+        pulseBpm: Math.round(
+          Math.min(96, Math.max(58, current.pulseBpm + (Math.random() - 0.5) * 2.4)),
+        ),
+        breathingBpm: Math.round(
+          Math.min(22, Math.max(10, current.breathingBpm + (Math.random() - 0.5) * 1.2)),
+        ),
+      }));
+      setMockWarning((current) => {
+        if (current) return current;
+        if (Math.random() > 0.992) return "Lighting is low — move a light closer to the face";
+        return null;
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [diagnostics.available]);
+
+  useEffect(() => {
+    if (!mockWarning) return;
+    const timer = window.setTimeout(() => setMockWarning(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [mockWarning]);
 
   // Keeps "Elapsed" / "Last input" ticking once real session timestamps exist.
   useEffect(() => {
@@ -76,6 +106,8 @@ export function ClinicianView() {
     ? formatElapsed(diagnostics.sessionStartedAt, now)
     : "00:14:32";
   const lastInput = diagnostics.lastEventAt ? formatAgo(diagnostics.lastEventAt, now) : "8 sec ago";
+  const vitals = diagnostics.available && diagnostics.vitals ? diagnostics.vitals : mockVitals;
+  const warnings = diagnostics.available ? diagnostics.warnings : mockWarning ? [mockWarning] : [];
 
   const chartPoints = points
     .map((value, index) => `${(index / (points.length - 1)) * 1000},${220 - value * 600}`)
@@ -113,6 +145,19 @@ export function ClinicianView() {
             </div>
           </div>
         </div>
+        {warnings.length > 0 && (
+          <div className="mb-6 space-y-2" role="alert">
+            {warnings.map((warning) => (
+              <div
+                key={warning}
+                className="flex items-center gap-3 rounded-md border border-amber/40 bg-amber/10 px-4 py-3 text-sm font-medium text-amber"
+              >
+                <AlertTriangle className="size-4 shrink-0" />
+                {warning}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <section className="rounded-lg border border-border bg-card p-4 md:p-6">
             <div className="mb-5 flex items-start justify-between gap-4">
@@ -155,6 +200,29 @@ export function ClinicianView() {
             </div>
           </section>
           <aside className="grid content-start gap-4 sm:grid-cols-2 lg:grid-cols-1">
+            <section className="rounded-lg border border-border bg-card p-5 sm:col-span-2 lg:col-span-1">
+              <h2 className="mb-4 font-semibold">Vitals</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-center gap-3">
+                  <HeartPulse className="size-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-2xl font-semibold tabular-nums leading-none">
+                      {vitals.pulseBpm ?? "—"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">bpm pulse</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Wind className="size-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-2xl font-semibold tabular-nums leading-none">
+                      {vitals.breathingBpm ?? "—"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">breaths/min</p>
+                  </div>
+                </div>
+              </div>
+            </section>
             <Metric
               title="False activations"
               value={String(falseActivations)}

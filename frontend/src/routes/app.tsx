@@ -233,16 +233,29 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
   }, [cameraOn]);
 
   async function openCamera() {
+    if (streamRef.current) return; // already open or opening — ignore a repeat click
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
       streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-      }
       setError(null);
       setCameraOn(true);
-    } catch {
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        try {
+          await videoRef.current.play();
+        } catch (playErr) {
+          // A fast unmount/remount (HMR, rapid clicks) can abort play() even
+          // though the camera stream itself was granted fine — not a real failure.
+          if (!(playErr instanceof DOMException && playErr.name === "AbortError")) throw playErr;
+        }
+      }
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : typeof err;
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[tacit] getUserMedia failed: ${name} — ${message}`);
+      streamRef.current?.getTracks().forEach((t: MediaStreamTrack) => t.stop());
+      streamRef.current = null;
+      setCameraOn(false);
       setError("Camera unavailable — you can continue without it for this demo.");
     }
   }

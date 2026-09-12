@@ -1,0 +1,217 @@
+  <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tacit — Blink Engine dev harness (Milestone 5)</title>
+<style>
+  body { margin: 0; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  #stage { position: relative; width: 640px; height: 480px; margin: 16px; background: #000; }
+  /* HARD REQUIREMENT: live video is always visible and mirrored. */
+  #video, #overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    transform: scaleX(-1); /* mirror so it feels natural */
+  }
+  #overlay { pointer-events: none; }
+  #banner { position: absolute; left: 0; right: 0; top: 0; padding: 6px 10px; font-weight: bold;
+            background: rgba(200,40,40,.85); display: none; }
+  .panel { margin: 16px; padding: 12px; border: 1px solid #333; max-width: 608px;
+           font-family: ui-monospace, monospace; font-size: 14px; line-height: 1.5; }
+  .panel h2 { margin: 0 0 8px; font-size: 14px; color: #aaa; }
+  #sig { font-size: 40px; font-weight: bold; }
+  .dim { color: #888; }
+  .warn { color: #fc0; }
+  #status { color: #fc0; }
+  #eyeState { font-size: 22px; font-weight: bold; }
+  #eyeState.open { color: #4a9; } #eyeState.closing { color: #fa4; } #eyeState.closed { color: #f66; }
+  #hist { display: block; background: #000; border: 1px solid #333; margin-top: 8px; }
+  #log { margin-top: 8px; max-height: 220px; overflow-y: auto; background: #000; border: 1px solid #333; padding: 6px; }
+  #log .select { color: #6f6; font-weight: bold; }
+  #log .rest   { color: #fa4; font-weight: bold; }
+  #log .resume { color: #6cf; }
+  #log .face   { color: #c8f; }
+  #log .warn   { color: #fc0; }
+  #log .other  { color: #777; }
+  .big { font-size: 22px; font-weight: bold; }
+  button { font: inherit; padding: 6px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <video id="video" autoplay muted playsinline></video>
+  <canvas id="overlay"></canvas>
+  <div id="banner"></div>
+</div>
+
+<div class="panel">
+  <div id="status">initializing…</div>
+  <div>signal (<span id="sigMode"></span>): <span id="sig">—</span></div>
+  <div class="dim">EAR: <span id="ear">—</span> &nbsp; blink score: <span id="blink">—</span>
+       &nbsp; lookDown: <span id="lookDown">—</span> &nbsp; combined: <span id="combined">—</span></div>
+  <div class="dim">fps: <span id="fps">—</span> &nbsp; face: <span id="face">—</span>
+       &nbsp; warnings: <span id="warnings" class="warn">none</span></div>
+</div>
+
+<div class="panel">
+  <h2>CALIBRATION</h2>
+  <div id="calibState" class="warn">not started</div>
+  <div>baseline (p<span id="pctLabel"></span>): <span id="baseline" class="big">—</span>
+       &nbsp; inner/confirm (×<span id="ratioLabel"></span>): <span id="threshold" class="big">—</span>
+       &nbsp; outer/timing (×<span id="reopenLabel"></span>): <span id="reopen" class="big">—</span></div>
+  <div class="dim">samples: <span id="sCount">—</span> · min <span id="sMin">—</span> · p10 <span id="sP10">—</span>
+       · p50 <span id="sP50">—</span> · p90 <span id="sP90">—</span> · max <span id="sMax">—</span></div>
+  <canvas id="hist" width="600" height="80"></canvas>
+  <div class="dim">histogram of signal samples · red = inner (confirm) · orange = outer (timing) · yellow = baseline</div>
+  <div style="margin-top:8px"><button id="recalBtn">Recalibrate</button></div>
+</div>
+
+<div class="panel">
+  <h2>DETECTION (three zones)</h2>
+  <div>eye: <span id="eyeState">—</span> &nbsp; <span class="dim">closed for: <span id="closedFor">—</span> ms</span></div>
+  <div class="dim" id="zones"></div>
+  <div id="log"></div>
+  <div style="margin-top:8px"><button id="clearLogBtn">Clear log</button></div>
+</div>
+
+<script type="module">
+import { createBlinkEngine } from './blinkEngine.js';
+
+// --- Dev telemetry (NOT part of the engine) -----------------------------
+// POSTs live numbers + events to /telemetry on dev-server.py so they can be
+// read without screenshots. Press 1-9 to drop a labeled marker. No-ops if the
+// server isn't there.
+const TELEMETRY = true;
+const TELEMETRY_INTERVAL_MS = 250;
+
+const DOT_RADIUS = 3, DOT_COLOR_LEFT = '#00e5ff', DOT_COLOR_RIGHT = '#ff4dff';
+
+const $ = id => document.getElementById(id);
+const video = $('video'), overlay = $('overlay'), ctx = overlay.getContext('2d');
+const hist = $('hist'), histCtx = hist.getContext('2d');
+
+const engine = createBlinkEngine();   // all tunables live in blinkEngine.js
+const cfg = engine.config;
+
+$('sigMode').textContent   = cfg.signalMode;
+$('pctLabel').textContent  = Math.round(cfg.baselinePercentile * 100);
+$('ratioLabel').textContent  = cfg.thresholdRatio[cfg.signalMode];
+$('reopenLabel').textContent = cfg.reopenRatio[cfg.signalMode];
+$('zones').textContent = `ignore <${cfg.ignoreMaxMs} · select ${cfg.selectMinMs}–${cfg.selectMaxMs} · rest ≥${cfg.restMinMs} ms`;
+
+function sendTelemetry(obj) {
+  if (!TELEMETRY) return;
+  try { fetch('/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(obj), keepalive: true }).catch(() => {}); } catch (_) {}
+}
+function logLine(text, cls) {
+  const div = document.createElement('div');
+  div.className = cls;
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+  $('log').prepend(div);
+  sendTelemetry({ t: 'event', cls, text });
+}
+const f3 = v => v === null || v === undefined ? '—' : v.toFixed(3);
+
+// --- Frame: readout, overlay dots, fps, telemetry ---------------------
+let frameCount = 0, fpsWindowStart = performance.now(), lastTelemetryAt = 0, lastFrame = null;
+engine.on('frame', fr => {
+  lastFrame = fr;
+  if (overlay.width !== fr.videoWidth) { overlay.width = fr.videoWidth; overlay.height = fr.videoHeight; }
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (fr.landmarks) {
+    for (const [idx, color] of [[fr.eyeIdx.left, DOT_COLOR_LEFT], [fr.eyeIdx.right, DOT_COLOR_RIGHT]]) {
+      ctx.fillStyle = color;
+      for (const i of idx) {
+        const p = fr.landmarks[i];
+        ctx.beginPath(); ctx.arc(p.x * overlay.width, p.y * overlay.height, DOT_RADIUS, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  $('sig').textContent = f3(fr.signal); $('ear').textContent = f3(fr.ear);
+  $('blink').textContent = f3(fr.blink); $('lookDown').textContent = f3(fr.lookDown); $('combined').textContent = f3(fr.combined);
+  $('face').textContent = fr.paused ? 'LOST (paused)' : fr.face ? 'tracked' : 'not found';
+  $('eyeState').textContent = fr.paused ? 'paused' : fr.eye === 'closed' ? 'CLOSED' : fr.eye === 'closing' ? 'closing?' : 'open';
+  $('eyeState').className = fr.eye;
+  $('closedFor').textContent = fr.closedFor ? fr.closedFor.toFixed(0) : '—';
+
+  frameCount++;
+  if (fr.t - fpsWindowStart >= 1000) { $('fps').textContent = frameCount; frameCount = 0; fpsWindowStart = fr.t; }
+
+  if (fr.t - lastTelemetryAt >= TELEMETRY_INTERVAL_MS) {
+    lastTelemetryAt = fr.t;
+    const st = engine.getState(), r = v => v === null ? null : +v.toFixed(3);
+    sendTelemetry({ t: 'snap', face: fr.face, sig: r(fr.signal), ear: r(fr.ear), blink: r(fr.blink), lookDown: r(fr.lookDown),
+      combined: r(fr.combined), eye: fr.eye, closedFor: Math.round(fr.closedFor), paused: fr.paused, degraded: fr.degraded,
+      calib: st.calibration, threshold: r(st.calibrationResult?.threshold ?? null), reopen: r(st.calibrationResult?.reopen ?? null) });
+  }
+});
+
+// --- Calibration panel --------------------------------------------------
+engine.on('calibration', e => {
+  if (e.phase === 'countdown') {
+    $('calibState').textContent = `get ready — look at the screen and blink naturally… ${(e.remainingMs / 1000).toFixed(1)}s`;
+    for (const id of ['baseline', 'threshold', 'reopen', 'sCount', 'sMin', 'sP10', 'sP50', 'sP90', 'sMax']) $(id).textContent = '—';
+    histCtx.clearRect(0, 0, hist.width, hist.height);
+  } else if (e.phase === 'sampling') {
+    $('calibState').textContent = `SAMPLING — blink naturally… ${(e.remainingMs / 1000).toFixed(1)}s left (${e.sampleCount} samples)`;
+  } else if (e.phase === 'failed') {
+    $('calibState').textContent = `FAILED — ${e.reason} (${e.sampleCount} samples). Press Recalibrate.`;
+  } else if (e.phase === 'done') {
+    const r = e.result, s = r.stats;
+    $('calibState').textContent = `done  (baseOpen ${f3(r.baseOpen)}, baseEAR ${f3(r.baseEar)})`;
+    $('baseline').textContent = f3(r.baseline); $('threshold').textContent = f3(r.threshold); $('reopen').textContent = f3(r.reopen);
+    $('sCount').textContent = s.n; $('sMin').textContent = f3(s.min); $('sP10').textContent = f3(s.p10);
+    $('sP50').textContent = f3(s.p50); $('sP90').textContent = f3(s.p90); $('sMax').textContent = f3(s.max);
+    drawHistogram(r);
+    sendTelemetry({ t: 'calib', n: s.n, min: +s.min.toFixed(3), p10: +s.p10.toFixed(3), p50: +s.p50.toFixed(3),
+      p90: +s.p90.toFixed(3), max: +s.max.toFixed(3), baseline: +r.baseline.toFixed(3), threshold: +r.threshold.toFixed(3), reopen: +r.reopen.toFixed(3) });
+  }
+});
+function drawHistogram(r) {
+  const sorted = r.samples, BINS = 40, lo = sorted[0], range = Math.max(sorted[sorted.length - 1] - lo, 1e-6);
+  const bins = new Array(BINS).fill(0);
+  for (const v of sorted) bins[Math.min(BINS - 1, Math.floor((v - lo) / range * BINS))]++;
+  const peak = Math.max(...bins), W = hist.width, H = hist.height, bw = W / BINS;
+  histCtx.clearRect(0, 0, W, H); histCtx.fillStyle = '#4a9';
+  bins.forEach((n, i) => { const h = n / peak * (H - 4); histCtx.fillRect(i * bw, H - h, bw - 1, h); });
+  const xOf = v => (v - lo) / range * W, line = (v, c) => { histCtx.strokeStyle = c; histCtx.beginPath(); histCtx.moveTo(xOf(v), 0); histCtx.lineTo(xOf(v), H); histCtx.stroke(); };
+  line(r.baseline, '#fc0'); line(r.threshold, '#f33'); line(r.reopen, '#f93');
+}
+
+// --- Events -> log --------------------------------------------------------
+engine.on('select',    e => logLine(`SELECT  ${e.durationMs.toFixed(0)} ms`, 'select'));
+engine.on('rest',      e => logLine(`REST    (eyes closed ≥ ${cfg.restMinMs} ms)`, 'rest'));
+engine.on('resume',    e => logLine(`RESUME  after ${e.durationMs.toFixed(0)} ms rest`, 'resume'));
+engine.on('ambiguous', e => logLine(`(${e.reason === 'shallow' ? 'shallow dip' : e.reason === 'degraded' ? 'closure while degraded' : 'ambiguous'} ${e.durationMs.toFixed(0)} ms — no event)`, 'other'));
+engine.on('facelost',  () => { logLine('FACE LOST — detection paused', 'face'); showBanner('Face not detected — detection paused'); });
+engine.on('faceback',  () => { logLine('FACE BACK — detection resumed', 'face'); showBanner(null); });
+engine.on('warning',   e => {
+  logLine(`${e.active ? 'WARNING' : 'cleared'}: ${e.code} — ${e.message}`, 'warn');
+  const w = engine.getState().warnings, active = Object.keys(w).filter(k => w[k]);
+  $('warnings').textContent = active.length ? active.join(', ') : 'none';
+  if (!engine.getState().paused) showBanner(active.length ? e.message : null);
+});
+engine.on('status', e => $('status').textContent = e.message);
+engine.on('error',  e => { console.error(e.error); $('status').textContent = 'ERROR: ' + (e.error.message || e.error); });
+function showBanner(msg) { $('banner').style.display = msg ? 'block' : 'none'; $('banner').textContent = msg || ''; }
+
+$('recalBtn').addEventListener('click', () => engine.calibrate());
+$('clearLogBtn').addEventListener('click', () => { $('log').innerHTML = ''; });
+window.addEventListener('keydown', e => {
+  if (e.key >= '1' && e.key <= '9') { sendTelemetry({ t: 'mark', key: e.key }); $('status').textContent = `marker ${e.key} sent`; }
+});
+
+// --- Go -------------------------------------------------------------------
+(async () => {
+  try {
+    $('status').textContent = 'requesting camera…';
+    await engine.start(video);
+    $('status').textContent = 'running (Milestone 5: blinkEngine.js module + robustness)';
+  } catch (err) {
+    console.error(err);
+    $('status').textContent = 'ERROR: ' + (err.message || err);
+  }
+})();
+</script>
+</body>
+</html>
