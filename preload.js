@@ -13,4 +13,14 @@ contextBridge.exposeInMainWorld('tacit', {
   getTopPhrases: patientId => ipcRenderer.invoke('tacit:topPhrases', patientId),
   listPatients: () => ipcRenderer.invoke('tacit:listPatients'),
   addPatient: entry => ipcRenderer.invoke('tacit:addPatient', entry),
+
+  // --- Engine bridge (producer side — used only by engine-host.html) ---
+  // Forwards one blinkEngine.js event to the main process, which relays it
+  // to the React window. See preload-react.js for the consumer side.
+  reportEngineEvent: (type, payload) => ipcRenderer.send('tacit:engine-event-report', { type, payload }),
+  onEngineControl: callback => {
+    const listener = (_event, msg) => callback(msg);
+    ipcRenderer.on('tacit:engine-control', listener);
+    return () => ipcRenderer.removeListener('tacit:engine-control', listener);
+  },
 });
