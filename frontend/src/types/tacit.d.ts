@@ -10,6 +10,26 @@ export type TacitGeminiSuggestions = {
   error?: string;
 };
 
+export type SuggestedQuestion = {
+  question: string;
+  type: "yes_no" | "option_board";
+  boardOptions?: string[];
+};
+
+export type SuggestedQuestionsResponse = {
+  source: "gemini" | "fallback";
+  model?: string;
+  questions: SuggestedQuestion[];
+  error?: string;
+};
+
+export type KeyboardCompletionsResponse = {
+  source: "gemini" | "fallback";
+  model?: string;
+  completions: string[];
+  error?: string;
+};
+
 export type TacitSelectionEntry = {
   patientId?: string;
   patientContext?: string;
@@ -22,6 +42,93 @@ export type TacitPatient = {
   id: string;
   firstName: string;
   createdAt: number;
+};
+
+export type Patient = {
+  id: string;
+  patientId: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ClinicalContext = {
+  id: string;
+  patientId: string;
+  diagnosis: string;
+  procedure: string;
+  medicalNotes: string;
+  bloodTestNotes: string;
+  additionalContext: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Session = {
+  id: string;
+  patientId: string;
+  startedAt: string;
+  endedAt: string | null;
+  status: "active" | "completed";
+};
+
+export type QuestionType = "yes_no" | "option_board" | "keyboard";
+
+export type Interaction = {
+  id: string;
+  sessionId: string;
+  patientId: string;
+  question: string;
+  questionType: QuestionType;
+  response: string;
+  timestamp: string;
+};
+
+export type VitalReading = {
+  id: string;
+  sessionId: string;
+  type: string;
+  value: string;
+  unit: string;
+  timestamp: string;
+};
+
+export type CreatePatientInput = {
+  patientId: string;
+  name: string;
+};
+
+export type UpdatePatientInput = Partial<CreatePatientInput>;
+
+export type SaveClinicalContextInput = {
+  patientId: string;
+  diagnosis?: string;
+  procedure?: string;
+  medicalNotes?: string;
+  bloodTestNotes?: string;
+  additionalContext?: string;
+};
+
+export type CreateSessionInput = {
+  patientId: string;
+  startedAt?: string;
+};
+
+export type SaveInteractionInput = {
+  sessionId: string;
+  patientId: string;
+  question?: string;
+  questionType: QuestionType;
+  response?: string;
+  timestamp?: string;
+};
+
+export type SaveVitalReadingInput = {
+  sessionId: string;
+  type: string;
+  value: string | number;
+  unit?: string;
+  timestamp?: string;
 };
 
 // --- Engine events (forwarded from blinkEngine.js via the hidden engine-host
@@ -118,6 +225,7 @@ export type TacitEngineEvent =
         paused: boolean;
         signal: number | null;
         eyePx: number;
+        blinkFlag?: boolean;
       };
     };
 
@@ -130,10 +238,39 @@ export interface TacitBridge {
     patientContext?: string;
     patientId?: string;
   }): Promise<TacitGeminiSuggestions>;
+  getGeminiQuestionSuggestions(context: {
+    patient?: Patient;
+    clinicalContext?: ClinicalContext | null;
+    recentInteractions?: Interaction[];
+    currentSessionInteractions?: Interaction[];
+  }): Promise<SuggestedQuestionsResponse>;
+  getGeminiKeyboardCompletions(context: {
+    typedText: string;
+    clinicianQuestion?: string;
+    patient?: Patient;
+    clinicalContext?: ClinicalContext | null;
+    recentInteractions?: Interaction[];
+    currentSessionInteractions?: Interaction[];
+  }): Promise<KeyboardCompletionsResponse>;
   recordSelection(entry: TacitSelectionEntry): Promise<void>;
   getTopPhrases(patientId?: string): Promise<string[]>;
   listPatients(): Promise<TacitPatient[]>;
   addPatient(entry: { id: string; firstName?: string }): Promise<TacitPatient | null>;
+  dbListPatients(): Promise<Patient[]>;
+  dbCreatePatient(patient: CreatePatientInput): Promise<Patient | null>;
+  dbGetPatient(id: string): Promise<Patient | null>;
+  dbGetPatientByPatientId(patientId: string): Promise<Patient | null>;
+  dbUpdatePatient(id: string, updates: UpdatePatientInput): Promise<Patient | null>;
+  dbDeletePatient(id: string): Promise<boolean>;
+  dbGetClinicalContext(patientId: string): Promise<ClinicalContext | null>;
+  dbSaveClinicalContext(context: SaveClinicalContextInput): Promise<ClinicalContext | null>;
+  dbCreateSession(session: CreateSessionInput): Promise<Session | null>;
+  dbGetSession(id: string): Promise<Session | null>;
+  dbCompleteSession(id: string, endedAt?: string): Promise<Session | null>;
+  dbSaveInteraction(interaction: SaveInteractionInput): Promise<Interaction | null>;
+  dbListInteractionsForSession(sessionId: string): Promise<Interaction[]>;
+  dbSaveVitalReading(reading: SaveVitalReadingInput): Promise<VitalReading | null>;
+  dbListVitalReadingsForSession(sessionId: string): Promise<VitalReading[]>;
 
   // Eleven Labs TTS (get API key from .env)
   getElevenLabsApiKey(): Promise<string>;

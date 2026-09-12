@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 
-import tacitLogo from "@/assets/tacit-logo.png";
+import logoAsset from "@/assets/tacit-logo-v3-white.png.asset.json";
 
 const BASE_NAV = [
   { to: "/", label: "Home", short: "Home" },
@@ -23,7 +23,7 @@ export function SiteHeader() {
       <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between gap-4 px-5 md:px-8">
         <Link to="/" aria-label="TACIT home" className="flex items-center">
           <img
-            src={tacitLogo}
+            src={logoAsset.url}
             alt="TACIT"
             className="h-14 w-auto object-contain"
             width="111"

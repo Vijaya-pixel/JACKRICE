@@ -142,7 +142,7 @@ const EVENT_NAMES = [
         report('frame', {
           t: payload.t, face: payload.face, eye: payload.eye, gaze: payload.gaze,
           gazeX: payload.gazeX, degraded: payload.degraded, paused: payload.paused,
-          signal: payload.signal, eyePx: payload.eyePx,
+          signal: payload.signal, eyePx: payload.eyePx, blinkFlag: payload.blinkFlag,
         });
         return;
       }
