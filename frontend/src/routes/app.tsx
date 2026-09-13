@@ -595,7 +595,10 @@ function PatientIdentification({
   }
 
   return (
-    <section className="w-full max-w-xl animate-fade-in" aria-label="Patient identification">
+    <section
+      className="my-auto w-full max-w-xl animate-fade-in"
+      aria-label="Patient identification"
+    >
       <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Patient identification
       </p>
@@ -735,20 +738,20 @@ function PatientContextScreen({
   }
 
   return (
-    <section className="w-full max-w-3xl animate-fade-in" aria-label="Patient context">
+    <section className="my-auto w-full max-w-3xl animate-fade-in" aria-label="Patient context">
       <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Patient context
       </p>
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
+      <div className="rounded-lg border border-border bg-card p-5 shadow-sm md:p-6">
         <div className="flex items-start gap-4">
           <span className="mt-1 flex size-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
             <ClipboardList className="size-5" aria-hidden="true" />
           </span>
           <div>
-            <h1 className="font-display text-3xl font-semibold md:text-4xl">
+            <h1 className="font-display text-2xl font-semibold md:text-3xl">
               Add clinical context
             </h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
               Optional notes for {patient.name} ({patient.patientId}). This stays local and can be
               edited before the session begins.
             </p>
@@ -756,7 +759,7 @@ function PatientContextScreen({
         </div>
 
         <form
-          className="mt-6 space-y-4"
+          className="mt-5 grid gap-3 md:grid-cols-2"
           onSubmit={(event) => {
             event.preventDefault();
             void beginCommunication({ saveContext: true });
@@ -767,7 +770,7 @@ function PatientContextScreen({
             <input
               value={diagnosis}
               onChange={(event) => setDiagnosis(event.target.value)}
-              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2.5 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
               placeholder="Example: stroke recovery"
               disabled={loading || submitting}
             />
@@ -778,18 +781,18 @@ function PatientContextScreen({
             <input
               value={procedure}
               onChange={(event) => setProcedure(event.target.value)}
-              className="mt-2 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              className="mt-1.5 w-full rounded-md border border-input bg-background px-3 py-2.5 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
               placeholder="Example: post-op pain review"
               disabled={loading || submitting}
             />
           </label>
 
-          <label className="block text-sm font-medium text-foreground">
+          <label className="block text-sm font-medium text-foreground md:col-span-2">
             Medical notes
             <textarea
               value={medicalNotes}
               onChange={(event) => setMedicalNotes(event.target.value)}
-              className="mt-2 min-h-24 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              className="mt-1.5 min-h-[4.5rem] w-full rounded-md border border-input bg-background px-3 py-2.5 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
               placeholder="Symptoms, mobility, communication considerations"
               disabled={loading || submitting}
             />
@@ -800,7 +803,7 @@ function PatientContextScreen({
             <textarea
               value={bloodTestNotes}
               onChange={(event) => setBloodTestNotes(event.target.value)}
-              className="mt-2 min-h-20 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              className="mt-1.5 min-h-[4.5rem] w-full rounded-md border border-input bg-background px-3 py-2.5 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
               placeholder="Recent values or clinical concerns"
               disabled={loading || submitting}
             />
@@ -811,24 +814,24 @@ function PatientContextScreen({
             <textarea
               value={additionalContext}
               onChange={(event) => setAdditionalContext(event.target.value)}
-              className="mt-2 min-h-20 w-full rounded-md border border-input bg-background px-3 py-3 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
+              className="mt-1.5 min-h-[4.5rem] w-full rounded-md border border-input bg-background px-3 py-2.5 text-base text-foreground outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-ring"
               placeholder="Family, language, preferences, or bedside notes"
               disabled={loading || submitting}
             />
           </label>
 
           {error && (
-            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive md:col-span-2">
               {error}
             </p>
           )}
           {status && (
-            <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">
+            <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success md:col-span-2">
               {status}
             </p>
           )}
 
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end md:col-span-2">
             <Button
               type="button"
               variant="outline"
@@ -2364,7 +2367,7 @@ function SessionSummaryScreen({
   ].join(" ");
 
   return (
-    <section className="w-full max-w-4xl animate-fade-in" aria-label="Session summary">
+    <section className="my-auto w-full max-w-4xl animate-fade-in" aria-label="Session summary">
       <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Session summary
       </p>

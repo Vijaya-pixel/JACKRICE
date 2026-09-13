@@ -110,9 +110,17 @@ export function SiteHeader() {
     <header className="machine-header fixed inset-x-0 top-0 z-40">
       <div className="mx-auto flex h-[76px] max-w-[1500px] items-center justify-between gap-4 px-5 md:px-8">
         <Link to="/" aria-label="TACIT home" className="flex shrink-0 items-center">
-          <span className="font-logo text-3xl font-bold tracking-tight text-machine-ink">
-            TACIT
-          </span>
+          {/* 725×540 source; height-driven so it fills the 76px header row
+              with a little breathing room and keeps its aspect ratio. */}
+          <img
+            src="/tacit-logo.png"
+            alt="TACIT"
+            width={725}
+            height={540}
+            decoding="async"
+            className="h-14 w-auto select-none md:h-16"
+            draggable={false}
+          />
         </Link>
 
         <nav

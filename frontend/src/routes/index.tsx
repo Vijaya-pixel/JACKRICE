@@ -61,12 +61,7 @@ function HomePage() {
         </section>
       </div>
 
-      <footer className="machine-footer border-t-2 border-border px-5 py-2.5 md:px-8">
-        <div className="mx-auto flex max-w-[1500px] flex-col gap-1 font-mono text-[11px] text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-          <p>&gt; note: blink detection simulated in this demo</p>
-          <p>build a3f9c2 · MediaPipe · React · WebRTC</p>
-        </div>
-      </footer>
+      <footer className="machine-footer" aria-hidden="true" />
     </main>
   );
 }

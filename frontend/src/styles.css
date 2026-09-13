@@ -22,10 +22,6 @@
   --font-sans: "Atkinson Hyperlegible", sans-serif;
   --font-display: "Fredoka", "Atkinson Hyperlegible", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
-  /* Just for the TACIT wordmark — the machine redesign's Playfair Display
-     (font-display) is reserved for headline copy; the logo itself stays the
-     bold rounded sans it always was. */
-  --font-logo: "Fredoka", "Atkinson Hyperlegible", sans-serif;
   --color-signal: var(--signal);
   --color-signal-foreground: var(--signal-foreground);
   --color-cta: var(--cta);
@@ -363,7 +359,6 @@
   border-bottom: 2px solid var(--machine-shell-dark);
   border-radius: var(--machine-screen-radius) var(--machine-screen-radius) 0 0;
 }
-.machine-logo { filter: brightness(0) saturate(100%) invert(11%) sepia(15%) saturate(1970%) hue-rotate(174deg) brightness(96%); }
 /* Single flex row for the LEDs + status text — they used to be two
    independently absolute-positioned elements with different `bottom`
    offsets (a manual guess at alignment) and the status text had no
