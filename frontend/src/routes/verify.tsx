@@ -48,7 +48,7 @@ function VerifyPage() {
   }, [stage, navigate]);
 
   return (
-    <main className="machine-page flex min-h-svh flex-col bg-muted/40 pt-[76px]">
+    <main className="machine-page machine-scroll-page flex min-h-svh flex-col bg-muted/40 pt-[76px]">
       <SiteHeader />
 
       <div className="machine-display mx-auto flex w-full max-w-[1500px] flex-1 items-center justify-center px-5 py-10 md:px-8">

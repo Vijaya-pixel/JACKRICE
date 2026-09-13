@@ -270,6 +270,13 @@
   overflow: visible;
 }
 
+.machine-scroll-page .machine-display {
+  height: auto;
+  min-height: calc(100svh - 108px);
+  overflow: visible;
+  align-items: flex-start;
+}
+
 .machine-page::after {
   content: "";
   position: absolute;
