@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useBlinkInput } from "@/hooks/useBlinkInput";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { useVitalsRecorder, VITAL_TYPES } from "@/hooks/useVitalsRecorder";
 import { localDb } from "@/lib/local-db";
 import {
   buildSuggestedQuestionContext,
@@ -30,7 +31,7 @@ import {
 } from "@/lib/question-suggestions";
 import { fetchNeedsSuggestions, recordSelection, useIsElectron } from "@/lib/tacit-api";
 import { cn } from "@/lib/utils";
-import type { Interaction, Patient, Session, SuggestedQuestion } from "@/types/tacit";
+import type { Interaction, Patient, Session, SuggestedQuestion, VitalReading } from "@/types/tacit";
 
 export const Route = createFileRoute("/app")({
   head: () => ({
@@ -265,6 +266,13 @@ function TacitApp() {
   });
   const electron = useIsElectron();
 
+  // Record Presage vitals for the summary while the camera is live for this
+  // session (calibration + communication), not on the setup/summary screens.
+  useVitalsRecorder(
+    workflow.currentSession?.id,
+    workflow.currentStage === "CALIBRATION" || workflow.currentStage === "COMMUNICATION",
+  );
+
   useEffect(() => {
     stopAudio();
   }, [stopAudio, workflow.currentStage, workflow.currentPatient?.id, workflow.currentSession?.id]);
@@ -460,7 +468,7 @@ function PatientView({
   const { currentStage, currentPatient, currentSession, calibrationState, restoring } = workflow;
 
   return (
-    <div className="machine-display flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
+    <div className="machine-display flex min-h-svh flex-col px-5 pb-16 pt-5 md:px-10">
       <SpeechControls />
       <div className="flex flex-1 items-center justify-center">
         {currentStage === "PATIENT_SETUP" && (
@@ -893,7 +901,7 @@ function BlinkCalibrationScreen({
   const ready = blinkCount >= 3;
 
   return (
-    <section className="w-full max-w-3xl animate-fade-in text-center" aria-label="Blink Calibration">
+    <section className="w-full max-w-5xl animate-fade-in text-center" aria-label="Blink Calibration">
       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Calibration
       </p>
@@ -2205,6 +2213,7 @@ function SessionSummaryScreen({
 }) {
   const { speak, stopAudio, enabled, available, isSpeaking } = useTextToSpeech();
   const [interactions, setInteractions] = useState<Interaction[]>([]);
+  const [vitals, setVitals] = useState<VitalReading[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -2212,11 +2221,19 @@ function SessionSummaryScreen({
     let cancelled = false;
     setLoading(true);
     setError(null);
-    localDb
-      .listInteractionsForSession(session.id)
-      .then((items) => {
+    Promise.all([
+      localDb.listInteractionsForSession(session.id),
+      // Vitals are a nice-to-have on the summary: a failure here must not
+      // hide the answers, so it degrades to "no vitals" instead of an error.
+      localDb.listVitalReadingsForSession(session.id).catch((vitalsError) => {
+        console.error("[tacit] session vitals load failed:", vitalsError);
+        return [] as VitalReading[];
+      }),
+    ])
+      .then(([items, readings]) => {
         if (cancelled) return;
         setInteractions([...items].sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
+        setVitals([...readings].sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
       })
       .catch((summaryError) => {
         console.error("[tacit] session summary load failed:", summaryError);
@@ -2231,8 +2248,14 @@ function SessionSummaryScreen({
     };
   }, [session.id]);
 
+  const vitalStats = useMemo(() => summarizeVitals(vitals), [vitals]);
+
   const summaryText = [
     `Session summary for ${patient.name}.`,
+    ...vitalStats.map(
+      (stat) =>
+        `${stat.label}: average ${stat.avg} ${stat.unit}, ranging ${stat.min} to ${stat.max}, from ${stat.count} readings.`,
+    ),
     interactions.length === 0
       ? "No answers were saved for this session."
       : `${interactions.length} ${interactions.length === 1 ? "answer was" : "answers were"} saved.`,
@@ -2252,13 +2275,83 @@ function SessionSummaryScreen({
         <div className="text-center">
           <h1 className="font-display text-3xl font-semibold md:text-5xl">Session summary</h1>
           <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
-            Summary for {patient.name} ({patient.patientId}). Presage vitals will be added later.
+            Summary for {patient.name} ({patient.patientId}).
           </p>
           <div className="mx-auto mt-5 grid w-fit gap-1 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs text-muted-foreground">
             <span>session: {session.id}</span>
             <span>started: {new Date(session.startedAt).toLocaleString()}</span>
             <span>last message: {spokenMessage || "none"}</span>
           </div>
+        </div>
+
+        <div className="mt-8">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-foreground">Presage vitals</h2>
+            <span className="rounded-md border border-border bg-background px-2 py-1 text-xs text-muted-foreground">
+              {vitals.length} {vitals.length === 1 ? "reading" : "readings"}
+            </span>
+          </div>
+
+          {loading && (
+            <p className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+              Loading vitals...
+            </p>
+          )}
+          {!loading && vitalStats.length === 0 && (
+            <p className="rounded-md border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
+              No vitals were captured for this session. Readings are recorded from the Presage
+              SmartSpectra camera feed while the session is live.
+            </p>
+          )}
+          {!loading && vitalStats.length > 0 && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {vitalStats.map((stat) => (
+                <article
+                  key={stat.type}
+                  className="rounded-lg border border-border bg-background p-4"
+                  aria-label={`${stat.label} summary`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
+                      {stat.type === VITAL_TYPES.pulse.type ? (
+                        <HeartPulse className="size-4 text-primary" aria-hidden="true" />
+                      ) : (
+                        <Activity className="size-4 text-primary" aria-hidden="true" />
+                      )}
+                      {stat.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {stat.count} {stat.count === 1 ? "reading" : "readings"}
+                    </span>
+                  </div>
+                  <p className="mt-3 font-display text-4xl font-semibold leading-none text-foreground">
+                    {stat.avg}
+                    <span className="ml-1.5 font-sans text-sm font-medium text-muted-foreground">
+                      {stat.unit} avg
+                    </span>
+                  </p>
+                  <dl className="mt-3 grid grid-cols-3 gap-2 font-mono text-xs text-muted-foreground">
+                    <div>
+                      <dt className="uppercase tracking-[0.12em]">min</dt>
+                      <dd className="mt-0.5 text-sm text-foreground">{stat.min}</dd>
+                    </div>
+                    <div>
+                      <dt className="uppercase tracking-[0.12em]">max</dt>
+                      <dd className="mt-0.5 text-sm text-foreground">{stat.max}</dd>
+                    </div>
+                    <div>
+                      <dt className="uppercase tracking-[0.12em]">last</dt>
+                      <dd className="mt-0.5 text-sm text-foreground">{stat.last}</dd>
+                    </div>
+                  </dl>
+                  <p className="mt-3 text-xs text-muted-foreground">
+                    {new Date(stat.firstAt).toLocaleTimeString()} –{" "}
+                    {new Date(stat.lastAt).toLocaleTimeString()}
+                  </p>
+                </article>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-8">
@@ -2334,6 +2427,48 @@ function SessionSummaryScreen({
       </div>
     </section>
   );
+}
+
+type VitalStat = {
+  type: string;
+  label: string;
+  unit: string;
+  count: number;
+  avg: number;
+  min: number;
+  max: number;
+  last: number;
+  firstAt: string;
+  lastAt: string;
+};
+
+/** Per-vital aggregate of a session's readings, in VITAL_TYPES order (pulse,
+ *  then breathing); unknown/unparseable rows are ignored. */
+function summarizeVitals(readings: VitalReading[]): VitalStat[] {
+  return Object.values(VITAL_TYPES).flatMap((vital) => {
+    const rows = readings
+      .filter((reading) => reading.type === vital.type && Number.isFinite(Number(reading.value)))
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const first = rows[0];
+    const lastRow = rows[rows.length - 1];
+    if (!first || !lastRow) return [];
+    const values = rows.map((reading) => Number(reading.value));
+    const round = (n: number) => Math.round(n);
+    return [
+      {
+        type: vital.type,
+        label: vital.label,
+        unit: vital.unit,
+        count: values.length,
+        avg: round(values.reduce((sum, value) => sum + value, 0) / values.length),
+        min: round(Math.min(...values)),
+        max: round(Math.max(...values)),
+        last: round(Number(lastRow.value)),
+        firstAt: first.timestamp,
+        lastAt: lastRow.timestamp,
+      },
+    ];
+  });
 }
 
 function WorkflowPlaceholder({
@@ -2414,7 +2549,7 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <section className="w-full max-w-3xl animate-fade-in text-center" aria-label="Camera check">
+    <section className="w-full max-w-5xl animate-fade-in text-center" aria-label="Camera check">
       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Step 1 · Diagnosis check
       </p>

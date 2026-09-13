@@ -1,0 +1,10 @@
+{
+  // Tailwind v4 CSS (@import "tailwindcss" source(none), @source, @theme,
+  // @custom-variant) isn't understood by VS Code's built-in CSS validator.
+  // Hand .css files to the Tailwind language mode and turn that validator off.
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+  "css.validate": false,
+  "css.lint.unknownAtRules": "ignore"
+}

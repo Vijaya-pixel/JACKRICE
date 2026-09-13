@@ -20,7 +20,7 @@
 
 @theme inline {
   --font-sans: "Atkinson Hyperlegible", sans-serif;
-  --font-display: "Playfair Display", Georgia, serif;
+  --font-display: "Fredoka", "Atkinson Hyperlegible", sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
   /* Just for the TACIT wordmark — the machine redesign's Playfair Display
      (font-display) is reserved for headline copy; the logo itself stays the
@@ -218,35 +218,58 @@
   min-height: 0 !important;
   margin: 16px auto;
   overflow: hidden;
-  /* Blue on the outside, a single thin navy line on the inside edge next to
-     the content — not a navy hairline on the outside too. Same on all four
-     sides; .machine-header/the fixed footer (opaque, same --machine-shell
-     blue) simply sit on top of this band at the top/bottom edges. */
-  border: 14px solid var(--machine-shell);
-  border-radius: 30px;
-  background: var(--background);
+  /* Always a flex column so every route's footer is a normal last child
+     under the (shrinking, internally-scrolling) display — including /app's,
+     which is no longer absolutely positioned over the screen's bottom. */
+  display: flex;
+  flex-direction: column;
+  /* iPad-style chassis, outside-in: a medium-blue outer bezel (the border),
+     then a thick navy rim (this element's own padding + background) that
+     wraps the top and both sides of the screen, then the rounded screen
+     itself (.machine-header + .machine-display). The footer bleeds back out
+     over the rim's side padding to form the blue "chin" under the screen. */
+  --machine-bezel: 22px;
+  --machine-rim-w: 22px;
+  --machine-rim-top: 26px;
+  --machine-screen-radius: 24px;
+  --machine-screen-line: color-mix(in oklch, var(--machine-glow) 45%, var(--machine-shell));
+  border: var(--machine-bezel) solid var(--machine-shell);
+  border-radius: 44px;
+  /* Top padding = rim + the absolutely-positioned header's height (76px row
+     + 1.5px top + 2px bottom border), so .machine-display starts flush
+     under the header. Unlayered, so it beats the routes' own pt-* utilities
+     on purpose — the rim inset must not depend on each route remembering it. */
+  --machine-header-h: 80px;
+  /* Height of the blue chin; 0 on footer-less routes (see :has() below). */
+  --machine-chin-h: 0px;
+  padding: calc(var(--machine-rim-top) + var(--machine-header-h)) var(--machine-rim-w) calc(var(--machine-rim-top) + var(--machine-chin-h));
+  /* Blue all over; the navy rim is painted by ::after as its own rounded
+     panel so its bottom corners curve into the chin like the top ones curve
+     into the bezel, instead of ending in a hard rectangle. */
+  background: var(--machine-shell);
+  isolation: isolate;
   box-shadow:
-    inset 0 0 0 4px var(--machine-rim),
-    0 10px 24px color-mix(in oklch, var(--machine-rim) 28%, transparent);
+    0 0 0 3px var(--machine-shell-dark),
+    0 12px 28px color-mix(in oklch, var(--machine-rim) 32%, transparent);
 }
 
+.machine-page:has(> footer) { --machine-chin-h: 52px; }
 .machine-page::after {
   content: "";
   position: absolute;
-  z-index: 35;
-  background: var(--machine-display);
+  z-index: -1;
+  inset: 0 0 var(--machine-chin-h);
+  border-radius: 22px;
+  background: var(--machine-rim);
 }
-/* Camera dot: lives on the header itself (not .machine-page) now that the
-   header is full-bleed and opaque all the way to the top — as a sibling
-   pseudo-element it would just get painted over. As ::before on the header,
-   it shares the header's own stacking context and paints after (on top of)
-   the header's own background, guaranteed, without needing to reason about
-   two different elements' z-index values at all. */
-.machine-header::before {
+
+/* Camera dot: sits in the navy rim band above the screen, centred. */
+.machine-page::before {
   content: "";
   position: absolute;
+  z-index: 35;
   left: 50%;
-  top: 7px;
+  top: 8px;
   width: 11px;
   height: 11px;
   transform: translateX(-50%);
@@ -262,13 +285,6 @@
   );
   box-shadow: inset 0 0 0 1.5px color-mix(in oklch, white 20%, black);
 }
-.machine-page::after {
-  right: -3px;
-  top: 106px;
-  width: 3px;
-  height: 42px;
-  border-radius: 0 3px 3px 0;
-}
 
 .machine-header {
   /* !important: the header's own className also carries Tailwind's `fixed`
@@ -282,13 +298,15 @@
      .machine-page's background underneath — that was the "white line" bug.
      Flush + square makes that class of gap structurally impossible instead
      of tuning it away. */
-  left: 0;
-  right: 0;
-  top: 0;
+  /* Docked to the screen's edges (inside the navy rim), not the chassis'. */
+  left: var(--machine-rim-w);
+  right: var(--machine-rim-w);
+  top: var(--machine-rim-top);
   background: var(--machine-shell);
-  border: 0;
+  /* Thin light outline on the screen's top/side edges; darker rule below. */
+  border: 1.5px solid var(--machine-screen-line);
   border-bottom: 2px solid var(--machine-shell-dark);
-  border-radius: 24px 24px 0 0;
+  border-radius: var(--machine-screen-radius) var(--machine-screen-radius) 0 0;
 }
 .machine-logo { filter: brightness(0) saturate(100%) invert(11%) sepia(15%) saturate(1970%) hue-rotate(174deg) brightness(96%); }
 /* Single flex row for the LEDs + status text — they used to be two
@@ -316,12 +334,28 @@
    floor flex items get by default). Full-bleed (no side/left/right inset,
    square top corners) to sit flush under the now full-bleed .machine-header
    with zero seam between them. */
-.machine-display { position: relative; height: 100%; min-height: 0 !important; width: 100% !important; max-width: none !important; margin-inline: 0 !important; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--machine-screen); border: 0; border-radius: 0; box-shadow: inset 0 0 24px color-mix(in oklch, var(--machine-rim) 10%, transparent); }
+.machine-display { position: relative; height: 100%; min-height: 0 !important; width: 100% !important; max-width: none !important; margin-inline: 0 !important; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--machine-screen); border: 0; border-radius: 0 0 var(--machine-screen-radius) var(--machine-screen-radius); box-shadow: inset 0 0 0 1.5px var(--machine-screen-line), inset 0 0 24px color-mix(in oklch, var(--machine-rim) 10%, transparent); }
 .machine-monitor { box-shadow: inset 0 0 20px color-mix(in oklch, var(--machine-cyan) 12%, transparent); }
 .machine-module { box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--machine-glow) 30%, transparent), 5px 6px 0 color-mix(in oklch, var(--machine-rim) 14%, transparent); }
 .machine-footer { background: var(--machine-shell); border-color: var(--machine-shell-dark); color: var(--machine-ink); }
-.machine-page > footer { background: var(--machine-shell); border-color: var(--machine-shell-dark); color: var(--machine-ink); }
-.machine-page > footer::before { content: ""; display: block; width: 88px; height: 5px; margin: -2px auto 5px; border-radius: 999px; background: var(--machine-rim); opacity: .65; }
+/* The blue "chin" under the screen: bleeds back out over the navy rim's side
+   padding so it runs bezel-to-bezel, with the wide home-bar pill up top. */
+.machine-page > footer {
+  flex: none;
+  /* The chassis' own bottom padding is the navy band under the screen (so
+     footer-less routes get it too); the footer's negative bottom margin
+     pulls the chin back down over that padding, flush with the bezel, and
+     its top margin keeps the same rim-height band between screen and chin. */
+  margin: var(--machine-rim-top) calc(-1 * var(--machine-rim-w)) calc(-1 * (var(--machine-rim-top) + var(--machine-chin-h)));
+  box-sizing: border-box;
+  height: var(--machine-chin-h);
+  padding: 6px 40px 0;
+  overflow: hidden;
+  background: var(--machine-shell);
+  border: 0;
+  color: var(--machine-ink);
+}
+.machine-page > footer::before { content: ""; display: block; width: 180px; height: 8px; margin: 0 auto 8px; border-radius: 999px; background: var(--machine-shell-dark); }
 /* app.tsx's footer carries Tailwind's `fixed` utility (meant to stay
    pinned while /app's content scrolls) — same trap the header had: `fixed`
    pins it to the REAL browser viewport bottom, not to .machine-page, so on
@@ -330,14 +364,21 @@
    selector hook here targets exactly that footer without touching the
    other routes' plain, correctly-static footers. */
 .machine-page > footer.fixed {
-  position: absolute !important;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  border-radius: 0 0 22px 22px;
+  position: static !important;
+  inset: auto;
 }
 
 body { background: color-mix(in oklch, var(--machine-screen) 70%, var(--machine-rim)); }
+
+/* White outline around each glyph. `paint-order: stroke fill` draws the
+   stroke UNDER the fill, so the outline sits outside the letter instead of
+   eating into it (which is what a plain text-stroke does); the stroke width
+   is therefore effectively half of the value below on each side. */
+.text-outline-white {
+  paint-order: stroke fill;
+  -webkit-text-stroke: 6px white;
+  text-stroke: 6px white;
+}
 
 @keyframes calibration-fill {
   from { background: conic-gradient(var(--primary) 0deg, var(--muted) 0deg); }
@@ -406,9 +447,13 @@ body { background: color-mix(in oklch, var(--machine-screen) 70%, var(--machine-
 }
 
 @media (max-width: 767px) {
-  .machine-page { width: calc(100% - 12px); height: calc(100svh - 12px); margin: 6px auto; border-radius: 22px; border-width: 8px; }
-  .machine-header { border-radius: 18px 18px 0 0; }
-  .machine-page::after, .machine-sensors, .machine-vents, .machine-status { display: none; }
+  .machine-page { --machine-bezel: 10px; --machine-rim-w: 10px; --machine-rim-top: 14px; --machine-screen-radius: 14px; width: calc(100% - 12px); height: calc(100svh - 12px); margin: 6px auto; border-radius: 26px; }
+  .machine-page::before { top: 3px; width: 8px; height: 8px; }
+  .machine-page:has(> footer) { --machine-chin-h: 50px; }
+  .machine-page::after { border-radius: 16px; }
+  .machine-page > footer { padding: 4px 16px 0; }
+  .machine-page > footer::before { width: 100px; height: 5px; margin-bottom: 5px; }
+  .machine-sensors, .machine-vents, .machine-status { display: none; }
   .machine-header nav { gap: 0; }
   .machine-header nav a { padding-inline: 6px; font-size: 10px; }
   .machine-power { width: 34px; height: 34px; justify-content: center; padding: 0; }

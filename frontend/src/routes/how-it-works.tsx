@@ -85,7 +85,7 @@ function HowItWorksPage() {
     <main className="machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
 
-      <div className="machine-display mx-auto max-w-5xl px-6 pb-20 pt-28">
+      <div className="machine-display mx-auto max-w-5xl px-6 pb-20 pt-10">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
           How it works
         </p>
