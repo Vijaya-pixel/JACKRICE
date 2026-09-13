@@ -975,6 +975,7 @@ function YesNoCommunicationScreen({
   const { speak } = useTextToSpeech();
   const [question, setQuestion] = useState("");
   const [selectedResponse, setSelectedResponse] = useState<"YES" | "NO" | null>(null);
+  const [scanIntervalMs, setScanIntervalMs] = useState(1250);
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1038,7 +1039,7 @@ function YesNoCommunicationScreen({
   const { index: highlightedIndex, setIndex } = useScanningSelection({
     options,
     active: canScan,
-    intervalMs: 1250,
+    intervalMs: scanIntervalMs,
     onSelect: chooseResponse,
   });
 
@@ -1062,7 +1063,7 @@ function YesNoCommunicationScreen({
         </p>
       </div>
 
-      <div className="mx-auto mt-7 max-w-3xl rounded-lg border border-border bg-card p-5 shadow-sm md:p-6">
+      <div className="mx-auto mt-7 grid max-w-4xl gap-4 rounded-lg border border-border bg-card p-5 shadow-sm md:grid-cols-[1fr_12rem] md:p-6">
         <PromptSuggestionInput
           label="Question"
           value={question}
@@ -1076,59 +1077,84 @@ function YesNoCommunicationScreen({
             setSelectedResponse(null);
             setSaved(false);
             setError(null);
+            setIndex(0);
           }}
           onSelectSuggestion={onSuggestionSelect}
           onRegenerate={onRegenerateSuggestions}
         />
+
+        <label className="block text-sm font-medium text-foreground">
+          Scan speed
+          <select
+            value={scanIntervalMs}
+            onChange={(event) => setScanIntervalMs(Number(event.target.value))}
+            className="mt-2 w-full rounded-md border border-input bg-background px-4 py-3 text-base text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+          >
+            <option value={1000}>Fast</option>
+            <option value={1250}>Normal</option>
+            <option value={1500}>Slow</option>
+          </select>
+        </label>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+      <div className="mt-8 grid gap-4 sm:grid-cols-2">
         {options.map((option, optionIndex) => {
           const active = canScan && highlightedIndex === optionIndex;
           const selected = selectedResponse === option.value;
           return (
-            <button
+            <div
               key={option.value}
-              type="button"
-              onClick={() => void chooseResponse(option)}
-              disabled={!question.trim() || saving || !!selectedResponse}
               className={cn(
-                "scan-target relative flex min-h-52 w-full items-center justify-center overflow-hidden rounded-lg border-2 bg-card px-4 transition-all duration-300 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring md:min-h-72",
-                option.value === "YES" ? "bg-pastel-green/70" : "bg-pastel-blue/70",
-                active && "scan-active border-scan bg-scan/15 text-foreground",
-                selected && "scan-selected border-success bg-success text-success-foreground",
-                (!question.trim() || saving || selectedResponse) && !selected && "opacity-70",
+                "relative min-h-52 rounded-lg border-2 bg-card text-center shadow-sm transition md:min-h-72",
+                active
+                  ? "scale-[1.02] border-primary bg-primary text-primary-foreground shadow-lg"
+                  : "border-border text-foreground hover:border-primary/60",
+                selected && "border-success bg-success text-success-foreground shadow-lg",
+                selectedResponse && !selected && "opacity-55",
               )}
-              aria-current={active ? "true" : undefined}
             >
-              {selected && <Check className="absolute right-5 top-5 size-8" aria-hidden="true" />}
-              <span className="font-display text-6xl font-semibold md:text-8xl">
-                {option.label}
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIndex(optionIndex);
+                  void chooseResponse(option);
+                }}
+                disabled={saving || Boolean(selectedResponse)}
+                className="flex min-h-52 w-full flex-col items-center justify-center px-5 py-8 focus:outline-none focus:ring-4 focus:ring-primary/25 md:min-h-72"
+                aria-pressed={selected}
+              >
+                <span className="block font-display text-6xl font-semibold md:text-8xl">
+                  {option.label}
+                </span>
+                {active && !selected && (
+                  <span className="mt-3 block text-sm font-semibold uppercase tracking-[0.16em]">
+                    Highlighted
+                  </span>
+                )}
+                {selected && (
+                  <span className="mt-3 block text-sm font-semibold uppercase tracking-[0.16em]">
+                    Selected {saved ? "✓" : saving ? "saving..." : ""}
+                  </span>
+                )}
+              </button>
+            </div>
           );
         })}
       </div>
 
-      <div className="mx-auto mt-6 max-w-3xl text-center">
-        {!question.trim() && (
-          <p className="rounded-md border border-amber/40 bg-amber/10 px-3 py-2 text-sm text-amber">
-            Enter a question to start scanning.
-          </p>
-        )}
-        {selectedResponse && (
-          <p className="rounded-md border border-success/30 bg-success/10 px-3 py-3 text-base font-semibold text-success">
-            Selected response: {selectedResponse} {saved ? "✓" : saving ? "saving..." : ""}
-          </p>
-        )}
-        {error && (
-          <p className="mt-3 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
+      {!question.trim() && (
+        <p className="mt-4 text-center text-sm font-medium text-destructive">
+          Enter a question before scanning starts.
+        </p>
+      )}
+      {error && <p className="mt-4 text-center text-sm font-medium text-destructive">{error}</p>}
+      {selectedResponse && !error && (
+        <p className="mt-5 text-center text-lg font-semibold text-foreground">
+          Selected response: {selectedResponse} {saved ? "✓" : saving ? "saving..." : ""}
+        </p>
+      )}
 
-      <div className="mt-7 flex flex-wrap items-center justify-center gap-3">
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
         <Button variant="outline" size="lg" onClick={askAnotherQuestion}>
           Ask Another Question
         </Button>

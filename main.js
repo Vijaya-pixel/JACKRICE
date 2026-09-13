@@ -673,7 +673,7 @@ function getDevServerUrl() {
   // sandbox-detection plugin in frontend/vite.config.ts), NOT Vite's usual
   // 5173. If "cd frontend; npm run dev" printed a different port, set
   // TACIT_DEV_SERVER_URL to match before starting Electron.
-  return readEnvVar('TACIT_DEV_SERVER_URL') || 'http://localhost:8080/app';
+  return readEnvVar('TACIT_DEV_SERVER_URL') || 'http://localhost:8080/';
 }
 function getProdPort() {
   return Number(readEnvVar('TACIT_PROD_PORT')) || 4173;
@@ -839,7 +839,7 @@ function loadPackagedReactFrontend(win) {
     stdio: 'inherit',
   });
   packagedServerProcess.on('error', err => console.error('[tacit] packaged frontend preview server failed to start:', err.message));
-  setTimeout(() => loadWithFallback(win, `http://localhost:${port}/app`, 'packaged preview server'), 1500);
+  setTimeout(() => loadWithFallback(win, `http://localhost:${port}/`, 'packaged preview server'), 1500);
 }
 
 function createWindows() {
