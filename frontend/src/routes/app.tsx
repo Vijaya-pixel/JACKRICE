@@ -2248,6 +2248,7 @@ function SessionSummaryScreen({
   const [interactions, setInteractions] = useState<Interaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startingAnotherPatient, setStartingAnotherPatient] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -2283,6 +2284,12 @@ function SessionSummaryScreen({
         : `${interaction.question ? `Question: ${interaction.question}. ` : ""}Answer: ${interaction.response || "No response recorded"}.`,
     ),
   ].join(" ");
+
+  function startAnotherPatient() {
+    if (startingAnotherPatient) return;
+    setStartingAnotherPatient(true);
+    window.setTimeout(onStartAnotherPatient, 300);
+  }
 
   return (
     <section className="w-full max-w-4xl animate-fade-in" aria-label="Session summary">
@@ -2368,7 +2375,15 @@ function SessionSummaryScreen({
             <Volume2 className="size-5" aria-hidden="true" />
             {isSpeaking ? "Stop reading" : "Read summary"}
           </Button>
-          <Button size="lg" onClick={onStartAnotherPatient}>
+          <Button
+            size="lg"
+            onClick={startAnotherPatient}
+            disabled={startingAnotherPatient}
+            className={cn(
+              "transition-[transform,opacity,filter] duration-300 ease-out",
+              startingAnotherPatient && "scale-125 opacity-0 blur-md",
+            )}
+          >
             Start another patient
           </Button>
         </div>
