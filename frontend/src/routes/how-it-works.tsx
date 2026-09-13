@@ -87,7 +87,7 @@ function HowItWorksPage() {
   function launchPage(destination: "/app" | "/clinician") {
     if (launching) return;
     setLaunching(destination);
-    window.setTimeout(() => void navigate({ to: destination }), 300);
+    window.setTimeout(() => void navigate({ to: destination }), 100);
   }
 
   return (
@@ -133,7 +133,7 @@ function HowItWorksPage() {
             size="lg"
             onClick={() => launchPage("/app")}
             disabled={Boolean(launching)}
-            className={launching === "/app" ? "scale-125 opacity-0 blur-md" : "transition-[transform,opacity,filter] duration-300 ease-out"}
+            className={launching === "/app" ? "scale-125 opacity-0 blur-md" : "transition-[transform,opacity,filter] duration-100 ease-out"}
           >
             Open the patient experience
           </Button>
@@ -142,7 +142,7 @@ function HowItWorksPage() {
             variant="outline"
             onClick={() => launchPage("/clinician")}
             disabled={Boolean(launching)}
-            className={launching === "/clinician" ? "scale-125 opacity-0 blur-md" : "transition-[transform,opacity,filter] duration-300 ease-out"}
+            className={launching === "/clinician" ? "scale-125 opacity-0 blur-md" : "transition-[transform,opacity,filter] duration-100 ease-out"}
           >
             See the clinician overview
           </Button>
