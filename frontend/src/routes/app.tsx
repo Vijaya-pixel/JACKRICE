@@ -568,7 +568,7 @@ function PatientIdentification({
       <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Patient identification
       </p>
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
+      <div className="origin-center animate-in fade-in zoom-in-50 duration-1000 transform-gpu rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
         <h1 className="font-display text-3xl font-semibold md:text-4xl">Start patient session</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
           Enter the patient details once. TACIT will reuse an existing local record when the patient ID already exists.
