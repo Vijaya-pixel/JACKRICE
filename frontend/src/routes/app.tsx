@@ -951,8 +951,8 @@ function BlinkCalibrationScreen({
           onClick={() => completeCalibration("skip")}
           disabled={Boolean(calibrationAction)}
           className={cn(
-            "transition-[transform,opacity,filter] duration-300 ease-in-out",
-            calibrationAction === "skip" && "scale-50 opacity-0 blur-sm",
+            "transition-[transform,opacity,filter] duration-300 ease-out",
+            calibrationAction === "skip" && "scale-125 opacity-0 blur-md",
           )}
         >
           Skip Calibration
@@ -962,8 +962,8 @@ function BlinkCalibrationScreen({
           disabled={!ready || Boolean(calibrationAction)}
           onClick={() => completeCalibration("continue")}
           className={cn(
-            "transition-[transform,opacity,filter] duration-300 ease-in-out",
-            calibrationAction === "continue" && "scale-50 opacity-0 blur-sm",
+            "transition-[transform,opacity,filter] duration-300 ease-out",
+            calibrationAction === "continue" && "scale-125 opacity-0 blur-md",
           )}
         >
           Continue
