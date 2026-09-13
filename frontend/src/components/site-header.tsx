@@ -38,34 +38,31 @@ export function SiteHeader() {
   return (
     <header className="machine-header fixed inset-x-0 top-0 z-40">
       <div className="mx-auto flex h-[76px] max-w-[1500px] items-center justify-between gap-4 px-5 md:px-8">
-        <nav
-          aria-label="Primary"
-          className="machine-nav-left hidden items-center justify-start gap-2 md:flex"
-        >
-          {LEFT_NAV.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className={baseLink}
-              activeOptions={{ exact: item.to === "/" }}
-              activeProps={{ className: activeLink, "aria-current": "page" }}
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-
-        <Link to="/" aria-label="TACIT home" className="machine-nav-center flex items-center justify-center">
+        <div className="machine-nav-left flex min-w-0 items-center justify-start gap-2">
+          <Link to="/" aria-label="TACIT home" className="machine-nav-logo flex shrink-0 items-center">
           <span className="font-logo text-3xl font-bold tracking-tight text-machine-ink">
             TACIT
           </span>
-        </Link>
+          </Link>
+          <nav aria-label="Primary" className="hidden items-center gap-2 md:flex">
+            {LEFT_NAV.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={baseLink}
+                activeOptions={{ exact: item.to === "/" }}
+                activeProps={{ className: activeLink, "aria-current": "page" }}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+        </div>
+
+        <div className="machine-nav-axis" aria-hidden="true" />
 
         <div className="machine-nav-right-group flex min-w-0 items-center justify-end gap-2">
-          <nav
-            aria-label="Session"
-            className="machine-nav-right hidden items-center justify-end gap-2 md:flex"
-          >
+          <nav aria-label="Session" className="machine-nav-right hidden items-center justify-end gap-2 md:flex">
             {rightItems.map((item) => (
               <Link
                 key={item.to}

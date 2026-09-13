@@ -348,6 +348,7 @@
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
 }
+.machine-nav-axis { width: clamp(2rem, 8vw, 7rem); }
 .machine-nav-left,
 .machine-nav-right { min-width: 0; }
 .machine-nav-left a,
@@ -473,11 +474,15 @@ body { background: color-mix(in oklch, var(--machine-screen) 70%, var(--machine-
   .machine-page::after, .machine-sensors, .machine-vents, .machine-status { display: none; }
   .machine-header nav { gap: 0; }
   .machine-header nav a { padding-inline: 6px; font-size: 10px; }
-  .machine-header > div:first-child { display: flex; justify-content: space-between; }
-  .machine-nav-center { order: 2; }
-  .machine-nav-left { display: flex; order: 1; }
-  .machine-nav-right { display: flex; order: 3; }
-  .machine-nav-left a:nth-child(2),
+  .machine-header > div:first-child { gap: 4px; }
+  .machine-nav-axis { width: 1.5rem; }
+  .machine-nav-left { gap: 2px; }
+  .machine-nav-logo .font-logo { font-size: 1.25rem; }
+  .machine-nav-left nav { display: flex; gap: 0; }
+  .machine-nav-right { display: flex; }
+  .machine-nav-left nav a,
+  .machine-nav-right nav a { padding-inline: 3px; font-size: 9px; }
+  .machine-nav-left nav a:nth-child(2),
   .machine-nav-right a:nth-child(2) { display: none; }
   .machine-power { width: 34px; height: 34px; justify-content: center; padding: 0; }
 }
