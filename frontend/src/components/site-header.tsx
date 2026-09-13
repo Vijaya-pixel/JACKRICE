@@ -77,21 +77,15 @@ const BASE_NAV = [
   { to: "/app", label: "Patient session", short: "Patient" },
 ] as const;
 
-const CLINICIAN_NAV = {
-  to: "/clinician",
-  label: "Clinician overview",
-  short: "Clinician",
-} as const;
-
 const baseLink =
-  "machine-nav-link relative rounded-md px-4 py-2 text-sm font-semibold text-machine-ink/70 transition-[transform,color] duration-300 ease-out hover:-translate-y-0.5 hover:text-machine-ink motion-reduce:transform-none after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
+  "machine-nav-link relative rounded-md px-4 py-2 text-base font-semibold text-machine-ink/70 transition-[transform,color] duration-300 ease-out hover:-translate-y-0.5 hover:text-machine-ink motion-reduce:transform-none after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
 
 const activeLink = "!text-machine-ink after:!bg-machine-cyan";
 
 export function SiteHeader() {
   const navigate = useNavigate();
   const { role } = useRole();
-  const items = role === "clinician" ? [...BASE_NAV, CLINICIAN_NAV] : BASE_NAV;
+  const items = BASE_NAV;
   const indicator = useEngineIndicator();
 
   const [signingOut, setSigningOut] = useState(false);

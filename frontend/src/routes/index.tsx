@@ -47,15 +47,15 @@ function HomePage() {
               to="/app"
               className="inline-flex animate-in fade-in slide-in-from-left-8 fill-mode-both items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground duration-700 ease-out transition-colors hover:bg-cta/85 motion-reduce:animate-none"
             >
-              Try the Prototype
+              Try It Now
               <span aria-hidden="true">→</span>
             </Link>
             <Link
               to="/how-it-works"
               className="inline-flex animate-in fade-in slide-in-from-right-8 fill-mode-both items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground duration-700 ease-out transition-colors hover:bg-foreground hover:text-background motion-reduce:animate-none"
             >
-              Watch Demo
-              <span aria-hidden="true">▶</span>
+              Learn More
+              <span aria-hidden="true">→</span>
             </Link>
           </div>
         </section>
