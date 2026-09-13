@@ -1,5 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
 
 import { SiteHeader } from "@/components/site-header";
 
@@ -27,15 +26,6 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const navigate = Route.useNavigate();
-  const [launching, setLaunching] = useState<"/app" | "/how-it-works" | null>(null);
-
-  function launchPage(event: React.MouseEvent<HTMLButtonElement>, destination: "/app" | "/how-it-works") {
-    event.preventDefault();
-    event.stopPropagation();
-    if (launching) return;
-    setLaunching(destination);
-    window.setTimeout(() => void navigate({ to: destination }), 400);
-  }
 
   return (
     <main className="machine-page flex min-h-svh flex-col bg-background pt-[76px]">
@@ -58,16 +48,16 @@ function HomePage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
-              onClick={(event) => launchPage(event, "/app")}
-              className={`inline-flex will-change-transform items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground transition-[transform,opacity,filter] duration-400 ease-in-out ${launching === "/app" ? "scale-50 opacity-0 blur-sm" : ""}`}
+              onClick={() => void navigate({ to: "/app" })}
+              className="inline-flex animate-in fade-in slide-in-from-left-8 fill-mode-both items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground duration-700 ease-out"
             >
               Try the Prototype
               <span aria-hidden="true">→</span>
             </button>
             <button
               type="button"
-              onClick={(event) => launchPage(event, "/how-it-works")}
-              className={`inline-flex will-change-transform items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-[transform,opacity,filter,background-color,color] duration-400 ease-in-out hover:bg-foreground hover:text-background ${launching === "/how-it-works" ? "scale-50 opacity-0 blur-sm" : ""}`}
+              onClick={() => void navigate({ to: "/how-it-works" })}
+              className="inline-flex animate-in fade-in slide-in-from-right-8 fill-mode-both items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 bg-transparent px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground duration-700 ease-out hover:bg-foreground hover:text-background"
             >
               Watch Demo
               <span aria-hidden="true">▶</span>
