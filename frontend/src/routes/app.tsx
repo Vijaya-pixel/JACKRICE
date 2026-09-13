@@ -1033,6 +1033,7 @@ function YesNoCommunicationScreen({
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [continuing, setContinuing] = useState(false);
 
   const options = useMemo<Array<ScanOption<"YES" | "NO">>>(
     () => [
@@ -1103,6 +1104,12 @@ function YesNoCommunicationScreen({
     setSaved(false);
     setError(null);
     setIndex(0);
+  }
+
+  function continueFromYesNo() {
+    if (continuing) return;
+    setContinuing(true);
+    window.setTimeout(onContinue, 300);
   }
 
   return (
@@ -1187,7 +1194,15 @@ function YesNoCommunicationScreen({
         <Button variant="outline" size="lg" onClick={askAnotherQuestion}>
           Ask Another Question
         </Button>
-        <Button size="lg" onClick={onContinue}>
+        <Button
+          size="lg"
+          onClick={continueFromYesNo}
+          disabled={continuing}
+          className={cn(
+            "transition-[transform,opacity,filter] duration-300 ease-out",
+            continuing && "scale-125 opacity-0 blur-md",
+          )}
+        >
           Continue
         </Button>
       </div>
