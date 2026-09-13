@@ -343,6 +343,15 @@
   border-bottom: 2px solid var(--machine-shell-dark);
   border-radius: 24px 24px 0 0;
 }
+.machine-header > div:first-child {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+}
+.machine-nav-left,
+.machine-nav-right { min-width: 0; }
+.machine-nav-left a,
+.machine-nav-right a { white-space: nowrap; }
 .machine-logo { filter: brightness(0) saturate(100%) invert(11%) sepia(15%) saturate(1970%) hue-rotate(174deg) brightness(96%); }
 /* Single flex row for the LEDs + status text — they used to be two
    independently absolute-positioned elements with different `bottom`
@@ -464,5 +473,11 @@ body { background: color-mix(in oklch, var(--machine-screen) 70%, var(--machine-
   .machine-page::after, .machine-sensors, .machine-vents, .machine-status { display: none; }
   .machine-header nav { gap: 0; }
   .machine-header nav a { padding-inline: 6px; font-size: 10px; }
+  .machine-header > div:first-child { display: flex; justify-content: space-between; }
+  .machine-nav-center { order: 2; }
+  .machine-nav-left { display: flex; order: 1; }
+  .machine-nav-right { display: flex; order: 3; }
+  .machine-nav-left a:nth-child(2),
+  .machine-nav-right a:nth-child(2) { display: none; }
   .machine-power { width: 34px; height: 34px; justify-content: center; padding: 0; }
 }
