@@ -403,21 +403,23 @@ function TacitApp() {
     <main className="page-copy-reveal machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
 
-      <PatientView
-        workflow={workflow}
-        onPatientIdentified={selectPatient}
-        onSessionStarted={startSession}
-        onGoToCalibration={goToCalibration}
-        onCalibrationComplete={completeCalibration}
-        onCalibrationRetry={retryCalibration}
-        onGoToSessionSummary={goToSessionSummary}
-        onStartNewWorkflow={startNewWorkflow}
-        message={message}
-        spokenMessage={spokenMessage}
-        setSpokenMessage={setSpokenMessage}
-        questionSuggestions={questionSuggestionState}
-        onRefreshQuestionSuggestions={refreshQuestionSuggestions}
-      />
+      <div className="machine-display">
+        <PatientView
+          workflow={workflow}
+          onPatientIdentified={selectPatient}
+          onSessionStarted={startSession}
+          onGoToCalibration={goToCalibration}
+          onCalibrationComplete={completeCalibration}
+          onCalibrationRetry={retryCalibration}
+          onGoToSessionSummary={goToSessionSummary}
+          onStartNewWorkflow={startNewWorkflow}
+          message={message}
+          spokenMessage={spokenMessage}
+          setSpokenMessage={setSpokenMessage}
+          questionSuggestions={questionSuggestionState}
+          onRefreshQuestionSuggestions={refreshQuestionSuggestions}
+        />
+      </div>
 
       <footer className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-background/95 px-4 py-2 text-center text-xs text-muted-foreground backdrop-blur-md">
         {electron

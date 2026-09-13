@@ -33,7 +33,9 @@ function ClinicianPage() {
     <RoleGate>
       <main className="machine-page machine-scroll-page min-h-svh bg-background text-foreground">
         <SiteHeader />
-        <ClinicianView />
+        <div className="machine-display">
+          <ClinicianView />
+        </div>
         <footer className="border-t border-border/70 px-4 py-3 text-center text-xs text-muted-foreground">
           {electron
             ? "Live signal from the desktop app's camera"

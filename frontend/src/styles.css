@@ -242,6 +242,8 @@
 
 .machine-page {
   position: relative;
+  display: flex;
+  flex-direction: column;
   /* Capped well above typical window widths so the blue bezel is what fills
      the sides on a normal window instead of a wide band of plain page
      background before you even reach it — only extreme ultra-wide monitors
@@ -265,16 +267,14 @@
 }
 
 .machine-scroll-page {
-  height: auto;
-  min-height: calc(100svh - 32px) !important;
-  overflow: visible;
+  height: min(calc(100svh - 32px), 1110px);
+  min-height: 0 !important;
+  overflow: hidden;
 }
 
-.machine-scroll-page .machine-display {
-  height: auto;
-  min-height: calc(100svh - 108px);
-  overflow: visible;
-  align-items: flex-start;
+.machine-page > .machine-display {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .machine-page::after {
@@ -363,7 +363,7 @@
    floor flex items get by default). Full-bleed (no side/left/right inset,
    square top corners) to sit flush under the now full-bleed .machine-header
    with zero seam between them. */
-.machine-display { position: relative; height: 100%; min-height: 0 !important; width: 100% !important; max-width: none !important; margin-inline: 0 !important; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--machine-screen); border: 0; border-radius: 0; box-shadow: inset 0 0 24px color-mix(in oklch, var(--machine-rim) 10%, transparent); }
+.machine-display { position: relative; height: auto; min-height: 0 !important; width: 100% !important; max-width: none !important; margin-inline: 0 !important; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--machine-screen); border: 0; border-radius: 0; box-shadow: inset 0 0 24px color-mix(in oklch, var(--machine-rim) 10%, transparent); }
 .machine-monitor { box-shadow: inset 0 0 20px color-mix(in oklch, var(--machine-cyan) 12%, transparent); }
 .machine-module { box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--machine-glow) 30%, transparent), 5px 6px 0 color-mix(in oklch, var(--machine-rim) 14%, transparent); }
 .machine-footer { background: var(--machine-shell); border-color: var(--machine-shell-dark); color: var(--machine-ink); }
