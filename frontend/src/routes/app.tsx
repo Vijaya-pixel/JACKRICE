@@ -699,7 +699,7 @@ function PatientContextScreen({
       <p className="mb-3 text-center text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Patient context
       </p>
-      <div className="rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
+      <div className="origin-center animate-in fade-in zoom-in-50 duration-1000 transform-gpu rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
         <div className="flex items-start gap-4">
           <span className="mt-1 flex size-11 shrink-0 items-center justify-center rounded-lg bg-secondary text-secondary-foreground">
             <ClipboardList className="size-5" aria-hidden="true" />
