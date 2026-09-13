@@ -1,7 +1,70 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Power } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
 import { clearRole, useRole } from "@/lib/role";
+import { cn } from "@/lib/utils";
+
+/** No engine event for this long while "running" means the camera/SDK has
+ *  stalled (e.g. Presage dropping every frame) even though nothing errored. */
+const STALE_AFTER_MS = 3000;
+
+const WARNING_LABELS: Record<string, string> = {
+  low_light: "LOW LIGHT",
+  face_small: "MOVE CLOSER",
+  too_far: "MOVE CLOSER",
+  unstable_tracking: "UNSTABLE",
+  gaze_tracker_failed: "GAZE OFF",
+};
+
+type EngineIndicator = {
+  /** Cyan "ready" LED: engine running and tracking a face. */
+  ready: boolean;
+  /** Amber LED: something needs attention (warning, no face, stalled, error). */
+  warn: boolean;
+  /** Amber LED blinks (rather than steady) for hard failures. */
+  fault: boolean;
+  text: string;
+};
+
+/**
+ * Derives the header's two status LEDs + label from live engine diagnostics,
+ * so they reflect what the blink engine is actually doing instead of a
+ * hard-coded "SIGNAL READY". Re-evaluated every second so a stalled feed is
+ * noticed even when no new event arrives to trigger a render.
+ */
+function useEngineIndicator(): EngineIndicator {
+  const engine = useEngineDiagnostics();
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (typeof window === "undefined" || !window.tacit) {
+    return { ready: false, warn: false, fault: false, text: "BROWSER PREVIEW · SIMULATED" };
+  }
+  if (engine.status === "error") {
+    const detail = (engine.lastError ?? "").replace(/\s+/g, " ").trim().slice(0, 40).toUpperCase();
+    return { ready: false, warn: true, fault: true, text: `ENGINE ERROR${detail ? ` · ${detail}` : ""}` };
+  }
+  if (!engine.available || engine.status !== "running") {
+    return { ready: false, warn: false, fault: false, text: "ENGINE STARTING" };
+  }
+  if (engine.lastEventAt != null && now - engine.lastEventAt > STALE_AFTER_MS) {
+    return { ready: false, warn: true, fault: true, text: "NO SIGNAL · CHECK CAMERA" };
+  }
+  const warning = engine.warningCodes.map((code) => WARNING_LABELS[code]).find(Boolean);
+  if (!engine.face) {
+    return { ready: true, warn: true, fault: false, text: "ENGINE ACTIVE · NO FACE" };
+  }
+  if (warning) {
+    return { ready: true, warn: true, fault: false, text: `ENGINE ACTIVE · ${warning}` };
+  }
+  return { ready: true, warn: false, fault: false, text: "ENGINE ACTIVE · FACE OK" };
+}
 
 const BASE_NAV = [
   { to: "/", label: "Home", short: "Home" },
@@ -24,6 +87,7 @@ export function SiteHeader() {
   const navigate = useNavigate();
   const { role } = useRole();
   const items = role === "clinician" ? [...BASE_NAV, CLINICIAN_NAV] : BASE_NAV;
+  const indicator = useEngineIndicator();
 
   const signOut = () => {
     clearRole();
@@ -85,11 +149,20 @@ export function SiteHeader() {
           <span className="hidden w-16 md:block" aria-hidden="true" />
         )}
       </div>
-      <div className="machine-sensors" aria-hidden="true">
-        <span className="machine-lens" />
-        <span className="machine-led machine-led-ready" />
-        <span className="machine-led machine-led-warn" />
-        <span className="machine-status">SYSTEM ACTIVE · SIGNAL READY</span>
+      <div className="machine-sensors" role="status" aria-live="polite" aria-label={`Engine status: ${indicator.text}`}>
+        <span className="machine-status">{indicator.text}</span>
+        <span
+          className={cn("machine-led machine-led-ready", indicator.ready && "is-on")}
+          aria-hidden="true"
+        />
+        <span
+          className={cn(
+            "machine-led machine-led-warn",
+            indicator.warn && "is-on",
+            indicator.fault && "is-blink",
+          )}
+          aria-hidden="true"
+        />
       </div>
       <div className="machine-vents" aria-hidden="true">
         <span />

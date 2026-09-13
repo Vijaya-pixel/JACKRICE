@@ -14,6 +14,11 @@ export type EngineDiagnostics = {
    *  Callers should show their own mock/simulated data while this is false —
    *  covers both plain-browser mode and "Electron, but engine not ready yet". */
   available: boolean;
+  /** Engine lifecycle from its `status`/`error` events: "starting" while the
+   *  Presage SDK spins up, "running" once frames flow, "error" if start
+   *  failed or the source reported a fatal error. */
+  status: "idle" | "starting" | "running" | "error";
+  lastError: string | null;
   calibration: TacitCalibrationPhase | "idle";
   calibrationResult: TacitCalibrationResult | null;
   /** "Look at the center of the screen" gaze centering — starts once blink
@@ -28,6 +33,8 @@ export type EngineDiagnostics = {
   face: boolean;
   degraded: boolean;
   warnings: string[];
+  /** Codes of the currently-active warnings (low_light, face_small, …). */
+  warningCodes: string[];
   vitals: { pulseBpm?: number | undefined; breathingBpm?: number | undefined } | null;
   vitalsConfidence: { pulse: number | null; breathing: number | null };
   /** Rolling window of the calibrated closure signal, oldest first — feeds a
@@ -43,6 +50,8 @@ const SIGNAL_HISTORY_LENGTH = 72;
 
 const IDLE: EngineDiagnostics = {
   available: false,
+  status: "idle",
+  lastError: null,
   calibration: "idle",
   calibrationResult: null,
   gazeCalibration: "idle",
@@ -53,6 +62,7 @@ const IDLE: EngineDiagnostics = {
   face: false,
   degraded: false,
   warnings: [],
+  warningCodes: [],
   vitals: null,
   vitalsConfidence: { pulse: null, breathing: null },
   signalHistory: [],
@@ -84,6 +94,21 @@ export function useEngineDiagnostics() {
           lastEventAt: Date.now(),
         };
         switch (event.type) {
+          case "status":
+            if (event.payload.phase === "error") {
+              next.status = "error";
+              next.lastError = event.payload.message;
+            } else if (event.payload.phase === "running") {
+              next.status = "running";
+              next.lastError = null;
+            } else if (current.status !== "running") {
+              next.status = "starting";
+            }
+            break;
+          case "error":
+            next.status = "error";
+            next.lastError = event.payload.error.message;
+            break;
           case "calibration":
             next.calibration = event.payload.phase;
             if (event.payload.result) next.calibrationResult = event.payload.result;
@@ -118,6 +143,7 @@ export function useEngineDiagnostics() {
               warningsRef.current[event.payload.code] = event.payload.message;
             else delete warningsRef.current[event.payload.code];
             next.warnings = Object.values(warningsRef.current);
+            next.warningCodes = Object.keys(warningsRef.current);
             break;
           case "vitals":
             next.vitals = {

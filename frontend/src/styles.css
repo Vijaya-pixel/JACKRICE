@@ -269,21 +269,27 @@
   position: absolute;
   z-index: 35;
   left: 50%;
-  top: 8px;
-  width: 11px;
-  height: 11px;
+  /* Centred in the 26px rim band above the screen: 4px navy above and below
+     an 18px lens. Explicit pixels (mobile override below) rather than
+     derived from --machine-rim-top so the lens can't drift out of the band. */
+  top: 4px;
+  width: 18px;
+  height: 18px;
   transform: translateX(-50%);
   border-radius: 999px;
-  /* Radial gradient (near-black lens with a faint glassy highlight) instead
-     of a flat circle so it actually reads as a camera lens rather than a
-     dot — black, like a real front camera, not tinted to the accent color. */
+  /* Radial gradient (near-black lens with a glassy highlight) so it reads
+     as a camera lens rather than a dot. A light ring around it is what
+     makes it visible at all against the navy rim — black-on-navy alone
+     disappears. */
   background: radial-gradient(
     circle at 35% 35%,
-    color-mix(in oklch, white 12%, black) 0%,
-    black 55%,
+    color-mix(in oklch, white 28%, black) 0%,
+    color-mix(in oklch, var(--machine-shell) 25%, black) 45%,
     black 100%
   );
-  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, white 20%, black);
+  box-shadow:
+    0 0 0 2px color-mix(in oklch, var(--machine-glow) 55%, var(--machine-shell)),
+    0 0 6px color-mix(in oklch, var(--machine-glow) 40%, transparent);
 }
 
 .machine-header {
@@ -316,11 +322,47 @@
    it wrapped onto multiple lines and grew upward into the logo. One flex
    container with `align-items: center` makes perfect vertical alignment the
    default instead of something to tune by hand. */
-.machine-sensors { position: absolute; left: 16px; bottom: 9px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+/* Top-right corner of the header: label first, then the two LEDs at the
+   very edge, like a status readout on a device. */
+.machine-sensors { position: absolute; right: 16px; top: 8px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .machine-lens { display: none; }
-.machine-led { width: 11px; height: 11px; border-radius: 999px; border: 1px solid var(--machine-rim); }
-.machine-led-ready { background: var(--machine-cyan); box-shadow: 0 0 7px color-mix(in oklch, var(--machine-cyan) 65%, transparent); }
-.machine-led-warn { background: var(--amber); }
+/* State-driven LEDs (see SiteHeader's useEngineIndicator): dark when off,
+   lit + glowing when `.is-on`; the ready LED also gives a short brighter
+   glow every few seconds while on, like a heartbeat; `.is-blink` (faults)
+   flashes the amber LED instead of holding it steady. */
+.machine-led {
+  --led: var(--machine-cyan);
+  --led-glow:
+    0 0 6px 1px color-mix(in oklch, var(--led) 80%, transparent),
+    0 0 14px 3px color-mix(in oklch, var(--led) 35%, transparent);
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  border: 1px solid var(--machine-rim);
+  background: color-mix(in oklch, var(--led) 35%, var(--machine-rim));
+  transition: background-color 300ms, box-shadow 300ms;
+}
+.machine-led-ready { --led: var(--machine-cyan); }
+.machine-led-warn { --led: var(--amber); }
+.machine-led.is-on { background: var(--led); box-shadow: var(--led-glow); }
+.machine-led-ready.is-on { animation: machine-led-heartbeat 4s ease-in-out infinite; }
+.machine-led.is-blink { animation: machine-led-blink 1s steps(1, end) infinite; }
+@keyframes machine-led-heartbeat {
+  0%, 100% { box-shadow: var(--led-glow); }
+  8%, 16% {
+    box-shadow:
+      0 0 8px 2px color-mix(in oklch, var(--led) 95%, transparent),
+      0 0 20px 5px color-mix(in oklch, var(--led) 50%, transparent);
+  }
+  28% { box-shadow: var(--led-glow); }
+}
+@keyframes machine-led-blink {
+  0%, 100% { background: var(--led); box-shadow: var(--led-glow); }
+  50% { background: color-mix(in oklch, var(--led) 35%, var(--machine-rim)); box-shadow: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .machine-led { animation: none !important; }
+}
 .machine-vents { display: none; }
 .machine-status { font-family: var(--font-mono); font-size: 9px; color: var(--machine-rim); letter-spacing: 0; white-space: nowrap; }
 /* `overflow-y: auto` alone does nothing here: with height left at `auto` (or
@@ -448,9 +490,9 @@ body { background: color-mix(in oklch, var(--machine-screen) 70%, var(--machine-
 
 @media (max-width: 767px) {
   .machine-page { --machine-bezel: 10px; --machine-rim-w: 10px; --machine-rim-top: 14px; --machine-screen-radius: 14px; width: calc(100% - 12px); height: calc(100svh - 12px); margin: 6px auto; border-radius: 26px; }
-  .machine-page::before { top: 3px; width: 8px; height: 8px; }
   .machine-page:has(> footer) { --machine-chin-h: 50px; }
   .machine-page::after { border-radius: 16px; }
+  .machine-page::before { top: 3px; width: 8px; height: 8px; }
   .machine-page > footer { padding: 4px 16px 0; }
   .machine-page > footer::before { width: 100px; height: 5px; margin-bottom: 5px; }
   .machine-sensors, .machine-vents, .machine-status { display: none; }
