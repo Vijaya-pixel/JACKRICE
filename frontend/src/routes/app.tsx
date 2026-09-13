@@ -645,6 +645,7 @@ function PatientContextScreen({
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [contextAction, setContextAction] = useState<"skip" | "continue" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -709,7 +710,14 @@ function PatientContextScreen({
       setError("Could not continue. Please try again.");
     } finally {
       setSubmitting(false);
+      setContextAction(null);
     }
+  }
+
+  function startContextAction(action: "skip" | "continue") {
+    if (loading || submitting || contextAction) return;
+    setContextAction(action);
+    window.setTimeout(() => void beginCommunication({ saveContext: action === "continue" }), 300);
   }
 
   return (
@@ -736,7 +744,7 @@ function PatientContextScreen({
           className="mt-6 space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            void beginCommunication({ saveContext: true });
+            startContextAction("continue");
           }}
         >
           <label className="block text-sm font-medium text-foreground">
@@ -801,12 +809,23 @@ function PatientContextScreen({
             <Button
               type="button"
               variant="outline"
-              disabled={loading || submitting}
-              onClick={() => void beginCommunication({ saveContext: false })}
+              disabled={loading || submitting || Boolean(contextAction)}
+              onClick={() => startContextAction("skip")}
+              className={cn(
+                "transition-[transform,opacity,filter] duration-300 ease-out",
+                contextAction === "skip" && "scale-125 opacity-0 blur-md",
+              )}
             >
               Skip
             </Button>
-            <Button type="submit" disabled={loading || submitting}>
+            <Button
+              type="submit"
+              disabled={loading || submitting || Boolean(contextAction)}
+              className={cn(
+                "transition-[transform,opacity,filter] duration-300 ease-out",
+                contextAction === "continue" && "scale-125 opacity-0 blur-md",
+              )}
+            >
               {loading ? "Loading..." : submitting ? "Starting..." : "Continue"}
             </Button>
           </div>
