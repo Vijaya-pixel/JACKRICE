@@ -348,7 +348,7 @@
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
 }
-.machine-nav-axis { width: clamp(2rem, 8vw, 7rem); }
+.machine-nav-axis { width: clamp(0.5rem, 2vw, 1.5rem); }
 .machine-nav-left { position: relative; min-width: 0; width: 100%; justify-content: flex-end; }
 .machine-nav-left nav { margin-left: auto; }
 .machine-nav-logo { position: absolute; left: 0; }
