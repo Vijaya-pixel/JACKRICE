@@ -29,7 +29,7 @@ function HomePage() {
     <main className="machine-page flex min-h-svh flex-col bg-background pt-[76px]">
       <SiteHeader />
 
-      <div className="machine-display mx-auto flex w-full max-w-[1500px] flex-1 flex-col px-5 pb-8 pt-10 md:px-8 md:pt-14">
+      <div className="machine-display mx-auto flex w-full max-w-[1500px] flex-1 flex-col justify-center px-5 py-8 md:px-8">
         <section className="mx-auto max-w-2xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
             giving voice back
