@@ -1,60 +1,271 @@
-# Tacit
+# Tacit - Eye-Driven AAC Communication App
 
-Eye-driven Yes/No selection for patients who can't speak or move: look at an answer, blink once.
-Electron desktop app. Perception by the **Presage SmartSpectra SDK** (blink detection, face
-landmarks, pulse/breathing); gaze from a local MediaPipe face mesh; decision logic in `blinkEngine.js`.
+A comprehensive assistive communication app that helps non-verbal or mobility-limited patients communicate using blink detection, gaze tracking, AI-assisted suggestions, and text-to-speech.
 
-## Run
+## Features
 
-```bash
-npm install                 # pulls @smartspectra/node-sdk (+ per-platform native runtimes, large)
-npm run setup               # one-time: copies MediaPipe WASM + downloads the face model into ./mp
-cp .env.example .env        # then put your key in .env:  PRESAGE_API_KEY=...   (free at physiology.presagetech.com)
-npm start                   # bundles renderer + worker with esbuild, launches Electron
+### 👁️ Pages & Features
+
+1. **Patient Setup / Selection**
+
+   * Create and select patient profiles
+   * Store patient-specific clinical context
+   * Add diagnosis, procedure, and medical notes
+   * Maintain separate communication histories for each patient
+   * Start and manage communication sessions
+
+2. **Yes / No Communication**
+
+   * Large Yes and No response options
+   * Automatic option scanning
+   * Blink-based selection
+   * Mouse input fallback
+   * Designed for quick clinician questions
+
+3. **AI Communication Board**
+
+   * Context-aware communication suggestions
+   * Google Gemini integration
+   * Uses patient and session history
+   * Generates likely needs and phrases
+   * Blink-based option selection
+   * Keyboard fallback for custom responses
+
+4. **Blink-Scanning Keyboard**
+
+   * Row and column scanning
+   * Blink-based character selection
+   * Frequency-ordered keyboard layout
+   * Phrase and sentence prediction
+   * AI-assisted text completion
+   * Completed messages can be spoken aloud
+
+5. **Clinician Dashboard**
+
+   * Patient session monitoring
+   * Blink and gaze tracking status
+   * Calibration information
+   * Patient responses and interaction history
+   * Pulse and breathing-rate display
+   * Lighting and tracking warnings
+
+6. **Text-to-Speech**
+
+   * ElevenLabs integration
+   * Speaks selected patient responses
+   * Supports typed keyboard messages
+   * Automatic playback
+   * TTS enable/disable preference
+
+## Tech Stack
+
+* **Frontend**: React 19 with TypeScript
+* **Desktop Framework**: Electron
+* **Routing**: TanStack Router
+* **Styling**: Tailwind CSS
+* **AI**: Google Gemini API
+* **Computer Vision**: Presage SmartSpectra SDK + MediaPipe
+* **Text-to-Speech**: ElevenLabs
+* **Database**: SQLite
+* **Icons**: Lucide React
+* **Build Tools**: Vite and esbuild
+
+## Setup Instructions
+
+### Prerequisites
+
+* Node.js
+* npm
+* Git
+* Webcam
+* Presage SmartSpectra API key
+* Google Gemini API key
+* ElevenLabs API key
+
+### Installation
+
+1. **Clone the repository**
+
+   ```bash
+   git clone https://github.com/Vijaya-pixel/JACKRICE.git
+   cd JACKRICE
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **MediaPipe Setup**
+
+   ```bash
+   npm run setup
+   ```
+
+4. **Environment Setup**
+
+   Create a `.env` file or copy the example configuration:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   Add your API keys:
+
+   ```env
+   PRESAGE_API_KEY=your_presage_api_key
+   GEMINI_API_KEY=your_gemini_api_key
+   GEMINI_MODEL=gemini-flash-latest
+   ELEVENLABS_API_KEY=your_elevenlabs_api_key
+   ```
+
+5. **Run the app**
+
+   ```bash
+   npm start
+   ```
+
+   If Electron launches incorrectly from VS Code:
+
+   ```bash
+   env -u ELECTRON_RUN_AS_NODE npm start
+   ```
+
+## Project Structure
+
+```text
+JACKRICE/
+├── main.js                     # Electron main process
+├── preload.js                  # Electron IPC bridge
+├── blinkEngine.js              # Blink detection and calibration
+├── gazeTracker.js              # Gaze tracking logic
+├── gazeWorker.js               # MediaPipe gaze processing
+├── presageSource.js            # Presage SmartSpectra integration
+├── geminiHistory.js            # Patient communication history
+├── elevenLabsService.js        # Text-to-speech integration
+├── tacitDatabase.js            # SQLite database
+├── keyboardData.js             # Keyboard and prediction utilities
+├── yesnoApp.js                 # AAC communication interface
+├── setup-mediapipe.js          # MediaPipe setup
+├── .env.example                # Environment configuration
+└── frontend/
+    └── src/
+        ├── components/         # React UI components
+        ├── hooks/              # Blink, TTS, and vitals hooks
+        ├── lib/                # App services and API helpers
+        ├── routes/             # Application pages
+        └── types/              # TypeScript definitions
 ```
 
-VS Code terminal: `env -u ELECTRON_RUN_AS_NODE npm start` (VS Code sets a var that makes Electron run as plain Node).
-Diagnostics: the renderer console is relayed to the terminal; `TACIT_DEVTOOLS=1 npm start` opens DevTools.
+## Key Features Implementation
 
-## Flow in the app
+### Blink Detection
 
-1. Blink calibration (5 s) — blink naturally.
-2. Gaze centering — look at the video when it says LOOK HERE (2 s).
-3. Look at **Yes** or **No** to highlight it; **blink once** to select. Reset for another round.
+* Uses Presage SmartSpectra for blink and face tracking
+* Performs blink calibration before communication
+* Tracks Eye Aspect Ratio
+* Detects intentional blink selections
+* Includes false-activation filtering
+* Handles face-loss and poor-lighting conditions
 
-## Files
+### Gaze Tracking
 
-| File | Role |
-|---|---|
-| `main.js` / `preload.js` | Electron main process: window, Presage IPC bridge, camera permission, reads `PRESAGE_API_KEY` from `.env` |
-| `renderer.js` | Renderer entry: wires Presage source + gaze tracker into the engine, Presage-specific tuning (`ENGINE_OVERRIDES`), terminal diagnostics |
-| `presageSource.js` | Frame source: Presage SDK -> landmarks, blink flag, vitals |
-| `gazeTracker.js` / `gazeWorker.js` | Sub-pixel iris landmarks for gaze (MediaPipe in a Web Worker on a cloned camera track) |
-| `blinkEngine.js` | Source-agnostic engine: EAR timing, blink zones (ignore/select/rest), calibration, gaze direction, face-lost + lighting handling. All tunables in `DEFAULT_CONFIG` |
-| `yesnoApp.js`, `yesno-electron.html`, `yesno.css` | The Yes/No test UI |
-| `setup-mediapipe.js` | Fetches the MediaPipe runtime/model into `./mp` (gitignored) |
+* Uses MediaPipe Face Landmarker
+* Tracks iris and eye landmarks
+* Processes gaze data in a Web Worker
+* Works alongside Presage blink detection
+* Helps identify communication targets
 
-## Why the hybrid
+### Gemini Integration
 
-Presage is the product's physiology engine and its blink detector confirms every selection. But it
-rounds landmarks to whole pixels, and "which box is the user looking at" is a 3-5 pixel iris shift,
-so gaze needs float-precision eye points — the MediaPipe face mesh supplies only that, off the main
-thread so it never starves Presage's frame pump.
+* Generates context-aware communication options
+* Suggests clinician questions
+* Uses patient-specific interaction history
+* Assists with phrase and sentence completion
+* Does not autonomously diagnose patients
 
-## Tuning
+### Text-to-Speech
 
-`renderer.js` -> `ENGINE_OVERRIDES` (blink zone timings, EAR thresholds, gaze dead zone/dwell/smoothing).
-Defaults and documentation for every knob: `blinkEngine.js` -> `DEFAULT_CONFIG`.
+* Uses ElevenLabs for voice output
+* Reads selected communication responses
+* Supports keyboard-generated messages
+* Can be enabled or disabled
+* Communication remains usable without TTS
 
-## Text-to-speech in the React desktop app
+### Local Storage
 
-Set `ELEVENLABS_API_KEY` in the root `.env`, then restart Electron. The
-**Text-to-speech** switch above the patient workflow turns voice playback on or
-off and remembers the setting on this device. Voice starts enabled when configured.
-Selected Yes/No and board options are spoken for click, blink, and spacebar input;
-keyboard messages are spoken when **DONE** is selected. The session's **Read summary**
-button reads the saved questions and answers aloud.
+* SQLite database for persistent patient data
+* Stores patients and clinical context
+* Tracks communication sessions
+* Saves clinician questions and patient responses
+* Stores session vital readings
 
-Turning voice off or pressing **Stop speaking** cancels pending and playing speech.
-Plain browser previews do not have access to the ElevenLabs key and show voice as
-unavailable. API or playback failures leave communication and saving usable.
+## Development Notes
+
+* Tacit is currently a hackathon prototype
+* Blink detection requires initial calibration
+* Webcam quality and lighting can affect tracking
+* Mouse input is available as a fallback
+* Gemini suggestions require internet access
+* ElevenLabs speech requires internet access
+* AI assists communication but does not make medical decisions
+* The clinician remains responsible for diagnosis and treatment decisions
+
+## Future Enhancements
+
+* Improved gaze calibration
+* More personalized blink detection
+* Multi-language communication boards
+* Offline AI support
+* Hospital EHR / FHIR integration
+* Additional AAC layouts
+* Patient-specific voice profiles
+* Session export functionality
+* Improved support for glasses and varied lighting
+* Dedicated hardware eye-tracker support
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Camera not working**: Ensure webcam permissions are enabled and no other application is using the camera
+2. **Blink detection inaccurate**: Re-run calibration and improve room lighting
+3. **Gemini not responding**: Verify the `GEMINI_API_KEY` in the environment file
+4. **Text-to-speech not working**: Verify the `ELEVENLABS_API_KEY`
+5. **Electron launches as Node**: Run `env -u ELECTRON_RUN_AS_NODE npm start`
+6. **Build errors**: Delete `node_modules`, reinstall dependencies, and restart the application
+
+### Support
+
+For issues or questions, please refer to the Electron, MediaPipe, Google Gemini, Presage SmartSpectra, or ElevenLabs documentation.
+
+## About
+
+Tacit is an AI-assisted Augmentative and Alternative Communication system designed to help patients communicate through minimal eye movement and intentional blinks.
+
+The system follows a progressive communication model:
+
+```text
+Yes / No
+   ↓
+Context-Aware Communication Board
+   ↓
+Blink-Scanning Keyboard
+```
+
+The goal is to reduce the physical effort required for a patient to express their needs while keeping clinicians in control of medical interpretation and decision-making.
+
+### Resources
+
+* README
+* Repository Activity
+* Issues
+* Pull Requests
+
+### Languages
+
+* TypeScript
+* JavaScript
+* CSS
+* HTML
