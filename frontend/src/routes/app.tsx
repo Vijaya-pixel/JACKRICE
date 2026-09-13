@@ -521,6 +521,7 @@ function PatientIdentification({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [continuing, setContinuing] = useState(false);
   const continueTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -529,8 +530,8 @@ function PatientIdentification({
     };
   }, []);
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSubmit(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     const trimmedName = name.trim();
     const trimmedPatientId = patientId.trim();
 
@@ -539,6 +540,7 @@ function PatientIdentification({
 
     if (!trimmedName || !trimmedPatientId) {
       setError("Enter both patient name and patient ID.");
+      setContinuing(false);
       return;
     }
 
@@ -560,7 +562,15 @@ function PatientIdentification({
       setError("Patient lookup failed. Please try again.");
     } finally {
       setSubmitting(false);
+      setContinuing(false);
     }
+  }
+
+  function continuePatientSession(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (restoring || submitting || continuing) return;
+    setContinuing(true);
+    window.setTimeout(() => void handleSubmit(), 300);
   }
 
   return (
@@ -574,7 +584,7 @@ function PatientIdentification({
           Enter the patient details once. TACIT will reuse an existing local record when the patient ID already exists.
         </p>
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+        <form className="mt-6 space-y-4" onSubmit={continuePatientSession}>
           <label className="block text-sm font-medium text-foreground">
             Patient Name
             <input
@@ -602,7 +612,15 @@ function PatientIdentification({
           {error && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
           {status && <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">{status}</p>}
 
-          <Button type="submit" size="lg" className="w-full" disabled={submitting || restoring}>
+          <Button
+            type="submit"
+            size="lg"
+            className={cn(
+              "w-full transition-[transform,opacity,filter] duration-300 ease-out",
+              continuing && "scale-125 opacity-0 blur-md",
+            )}
+            disabled={submitting || restoring || continuing}
+          >
             {restoring ? "Loading patient..." : submitting ? "Checking..." : "Continue"}
           </Button>
         </form>
