@@ -657,10 +657,78 @@ let engineHostWindow = null;
 // window's webContents throws "Object has been destroyed" *inside this
 // ipcMain listener*, which is an uncaught exception in the main process
 // (crashes the whole app with Electron's default dialog).
+// Engine event log: one line per *discrete* engine event (calibration phase
+// changes, select/rest/ambiguous, warnings, status, control commands) to
+// stdout and to <userData>/engine-events.log, truncated on each launch. The
+// per-frame streams (frame/vitals/gaze) are skipped. Exists so "blinks don't
+// select" can be diagnosed from the log instead of guessing — the engine
+// itself never prints anything.
+const ENGINE_LOG_SKIP = new Set(['frame', 'vitals', 'gaze', 'vitalsCalibration', 'gazeCalibration']);
+let engineLogPath = null;
+let lastCalibrationPhase = null;
+function engineLog(line) {
+  const text = `${new Date().toISOString()} ${line}`;
+  console.log(`[engine] ${line}`);
+  if (engineLogPath) fs.appendFile(engineLogPath, text + '\n', () => {});
+}
+// Frame-rate line every 5 s: how many landmark frames the engine processed
+// and how many had a face. Low numbers here (≪ 30/s) make blink durations
+// quantized and selection flaky — see blinkEngine.js's debounce/zone config.
+const fpsWindow = { startedAt: 0, frames: 0, faceFrames: 0 };
+function countFrame(payload) {
+  const now = Date.now();
+  if (!fpsWindow.startedAt) fpsWindow.startedAt = now;
+  fpsWindow.frames++;
+  if (payload && payload.face) fpsWindow.faceFrames++;
+  const elapsed = now - fpsWindow.startedAt;
+  if (elapsed >= 5000) {
+    // Per-process CPU alongside fps: the Presage SDK's native processing
+    // runs in THIS (main) process while its frame pump runs in the hidden
+    // engine-host renderer, so a starved feed shows up as one of these
+    // pegged — or as main event-loop lag.
+    const cpu = app.getAppMetrics()
+      .map(m => `${m.type === 'Tab' ? (m.name || 'renderer').replace(/\s+/g, '') : m.type}=${m.cpu.percentCPUUsage.toFixed(0)}%`)
+      .join(' ');
+    engineLog(`fps ${(fpsWindow.frames / (elapsed / 1000)).toFixed(1)} (face ${(fpsWindow.faceFrames / (elapsed / 1000)).toFixed(1)}) mainLagMaxMs=${loopLag.max.toFixed(0)} cpu: ${cpu}`);
+    fpsWindow.startedAt = now; fpsWindow.frames = 0; fpsWindow.faceFrames = 0;
+    loopLag.max = 0;
+  }
+}
+// Main-process event-loop lag: a 100 ms timer that measures how late it fires.
+const loopLag = { max: 0, last: Date.now() };
+setInterval(() => {
+  const now = Date.now();
+  loopLag.max = Math.max(loopLag.max, now - loopLag.last - 100);
+  loopLag.last = now;
+}, 100);
+function logEngineEvent(msg) {
+  const { type, payload } = msg || {};
+  if (type === 'frame') { countFrame(payload); return; }
+  if (!type || ENGINE_LOG_SKIP.has(type)) return;
+  if (type === 'calibration') {
+    // countdown/sampling re-emit every frame; only log phase transitions.
+    if (payload.phase === lastCalibrationPhase) return;
+    lastCalibrationPhase = payload.phase;
+    const detail = payload.phase === 'done' && payload.result
+      ? ` baseline=${payload.result.baseline?.toFixed(3)} threshold=${payload.result.threshold?.toFixed(3)} reopen=${payload.result.reopen?.toFixed(3)} n=${payload.sampleCount}`
+      : payload.phase === 'failed' ? ` n=${payload.sampleCount} reason=${payload.reason}` : '';
+    engineLog(`calibration ${payload.phase}${detail}`);
+    return;
+  }
+  if (type === 'select' || type === 'ambiguous' || type === 'resume') {
+    engineLog(`${type} durationMs=${Math.round(payload.durationMs)} minSig=${payload.minSig?.toFixed(3)}${payload.reason ? ` reason=${payload.reason}` : ''}${payload.threshold != null ? ` threshold=${payload.threshold.toFixed(3)}` : ''}`);
+    return;
+  }
+  if (type === 'warning') { engineLog(`warning ${payload.code} ${payload.active ? 'ON' : 'off'}${payload.active ? ` — ${payload.message}` : ''}`); return; }
+  engineLog(`${type} ${JSON.stringify(payload)}`);
+}
+
 ipcMain.on('tacit:engine-event-report', (_event, msg) => {
+  logEngineEvent(msg);
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('tacit:engine-event', msg);
 });
 ipcMain.on('tacit:engine-control-send', (_event, msg) => {
+  engineLog(`control -> ${JSON.stringify(msg)}`);
   if (engineHostWindow && !engineHostWindow.isDestroyed()) engineHostWindow.webContents.send('tacit:engine-control', msg);
 });
 
@@ -869,6 +937,9 @@ function createWindows() {
 
 app.whenReady().then(() => {
   console.log(`[tacit] main ready — electron ${process.versions.electron}, mode ${LEGACY_UI ? 'legacy' : 'react'}, api key ${readApiKey() ? 'present' : 'absent (.env missing?)'}`);
+  engineLogPath = path.join(app.getPath('userData'), 'engine-events.log');
+  try { fs.writeFileSync(engineLogPath, ''); } catch (_) { engineLogPath = null; }
+  if (engineLogPath) console.log(`[tacit] engine event log: ${engineLogPath}`);
   session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
     const url = (details && details.requestingUrl) || (wc && wc.getURL()) || '';
     const mediaTypes = (details && details.mediaTypes) || [];

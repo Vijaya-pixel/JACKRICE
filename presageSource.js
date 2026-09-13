@@ -141,15 +141,67 @@ export function createPresageSource({ apiKey, vitals = true, cardio = true, zoom
     while (bi < blinks.length) { lastBlink = blinks[bi].detected; bi++; }
   }
 
-  return {
-    name: 'presage',
-    on,
-    getStatusNames: () => ({ STATUS_NAMES, VALIDATION_NAMES }),
-    async start(videoEl, frameCb, onStatus = () => {}) {
-      video = videoEl; onFrame = frameCb;
+  // --- SDK lifecycle (with auto-restart) -------------------------------
+  // The native graph occasionally fails with kProcessingFailed
+  // ("SmartSpectra processing failed", retryable: true) — sometimes right
+  // after Starting, sometimes tens of seconds into a healthy 30 fps run.
+  // Observed on macOS with no change in input; the SDK marks it retryable.
+  // Left alone the graph stays in Error forever and the app is dead (no
+  // frames → no blinks). So: tear the SDK down and start a fresh one, with
+  // backoff, up to RESTART_MAX_ATTEMPTS; the attempt counter resets once the
+  // new instance is producing frames again.
+  const RESTART_MAX_ATTEMPTS = 5;
+  const RESTART_BASE_DELAY_MS = 1500;
+  let statusCb = () => {};
+  let stopped = false;
+  let restartTimer = null;
+  let restartAttempts = 0;
+  let framesSinceStart = 0;
+
+  async function teardownSdk() {
+    const old = sdk;
+    sdk = null;
+    if (!old) return;
+    try { await old.stop(); } catch (_) {}
+    try { old.destroy(); } catch (_) {}
+  }
+
+  function scheduleRestart(reason) {
+    if (stopped || restartTimer) return;
+    if (restartAttempts >= RESTART_MAX_ATTEMPTS) {
+      statusCb(`Presage: gave up after ${restartAttempts} restarts (${reason})`);
+      return;
+    }
+    restartAttempts++;
+    const delay = RESTART_BASE_DELAY_MS * restartAttempts;
+    statusCb(`Presage: restarting in ${(delay / 1000).toFixed(1)}s (attempt ${restartAttempts}/${RESTART_MAX_ATTEMPTS}) — ${reason}`);
+    restartTimer = setTimeout(async () => {
+      restartTimer = null;
+      if (stopped) return;
+      await teardownSdk();
+      try {
+        await startSdk(statusCb);
+      } catch (e) {
+        onFrame({ t: performance.now(), landmarks: null, error: e });
+        scheduleRestart(e.message || String(e));
+      }
+    }, delay);
+  }
+
+  function noteFrame() {
+    framesSinceStart++;
+    // A restarted instance that reaches steady state earns back its attempts.
+    if (framesSinceStart === 60 && restartAttempts) restartAttempts = 0;
+  }
+
+  async function startSdk(onStatus) {
+      framesSinceStart = 0;
       const requested = [...breathingMetrics, ...faceMetrics];
       if (vitals && cardio) requested.push(...cardioMetrics);
-      sdk = new SmartSpectraSDK({ apiKey, requestedMetrics: requested, enableAccumulatedOutput: false });
+      const instance = new SmartSpectraSDK({ apiKey, requestedMetrics: requested, enableAccumulatedOutput: false });
+      sdk = instance;
+      // Events from a torn-down instance must not touch the live one.
+      const live = () => sdk === instance;
 
       if (zoom > 1) {
         // Own the camera: raw full-res feed to the visible <video>, zoomed crop to the SDK.
@@ -167,44 +219,59 @@ export function createPresageSource({ apiKey, vitals = true, cardio = true, zoom
         cropCtx = cropCanvas.getContext('2d', { alpha: false, desynchronized: true });
         pumpCrop();
         cropTimer = setInterval(pumpCrop, 1000 / 30);
-        sdk.useMediaStream(cropCanvas.captureStream(30));
+        instance.useMediaStream(cropCanvas.captureStream(30));
       }
 
       // Default (zoom 1): the SDK opens the camera itself and hands us the stream for the visible video.
-      sdk.on('streamAvailable', stream => {
-        if (zoom > 1) return; // host-supplied stream; visible video already shows the raw feed
+      instance.on('streamAvailable', stream => {
+        if (!live() || zoom > 1) return; // host-supplied stream; visible video already shows the raw feed
         video.srcObject = stream; video.muted = true; video.playsInline = true;
         video.play().catch(() => {});
         onStatus('Presage: camera stream attached');
       });
-      sdk.on('processingStatus', status => {
+      instance.on('processingStatus', status => {
+        if (!live()) return;
         const name = STATUS_NAMES[status] || `Status(${status})`;
         onStatus(`Presage: ${name}`);
         emit('processing', { status, name });
       });
-      sdk.on('validationStatus', (code, ts, hint) => {
+      instance.on('validationStatus', (code, _ts, hint) => {
+        if (!live()) return;
         emit('validation', { code, name: VALIDATION_NAMES[code] || `Code(${code})`, hint, ok: code === ValidationCode.kOk });
       });
-      sdk.on('metrics', (buf, ts) => {
+      instance.on('metrics', buf => {
+        if (!live()) return;
+        noteFrame();
         try { handleMetrics(decodeMetrics(buf)); }
         catch (e) { onFrame({ t: performance.now(), landmarks: null, error: e }); }
       });
-      sdk.on('error', (code, message, retryable) => {
+      instance.on('error', (code, message, retryable) => {
+        if (!live()) return;
         onFrame({ t: performance.now(), landmarks: null, error: Object.assign(new Error(`Presage ${code}: ${message}`), { code, retryable }) });
+        if (retryable) scheduleRestart(`Presage ${code}: ${message}`);
       });
-      onStatus('Presage: starting SDK…');
-      await sdk.start();
+      onStatus(restartAttempts ? `Presage: starting SDK (restart ${restartAttempts})…` : 'Presage: starting SDK…');
+      await instance.start();
+  }
+
+  return {
+    name: 'presage',
+    on,
+    getStatusNames: () => ({ STATUS_NAMES, VALIDATION_NAMES }),
+    async start(videoEl, frameCb, onStatus = () => {}) {
+      video = videoEl; onFrame = frameCb; statusCb = onStatus;
+      await startSdk(onStatus);
     },
     async stop() {
+      stopped = true;
+      if (restartTimer) clearTimeout(restartTimer); restartTimer = null;
       if (cropTimer) clearInterval(cropTimer); cropTimer = null;
       rawStream?.getTracks().forEach(t => t.stop()); rawStream = null;
-      if (!sdk) return;
-      try { await sdk.stop(); } catch (_) {}
-      try { sdk.destroy(); } catch (_) {}
-      sdk = null;
+      await teardownSdk();
       if (video) video.srcObject = null;
     },
     get framesSeen() { return framesSeen; },
     get crop() { return currentCrop(); },
   };
+
 }

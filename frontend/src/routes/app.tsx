@@ -863,13 +863,24 @@ function BlinkCalibrationScreen({
   onComplete: (detectedBlinkCount: number) => void;
   onRetry: () => void;
 }) {
+  const diagnostics = useEngineDiagnostics();
   const [blinkCount, setBlinkCount] = useState(calibrationState.detectedBlinkCount);
   const [blinkDetected, setBlinkDetected] = useState(false);
   const [advancing, setAdvancing] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  // Electron: the blink engine's OWN calibration (open-eye baseline →
+  // closure thresholds). Without it the engine never emits `select`, so the
+  // boards can't be driven by blinks no matter what this screen counted.
+  // "calibrating" = we asked and are waiting; "ready" = engine emits selects.
+  const [enginePhase, setEnginePhase] = useState<"idle" | "calibrating" | "ready" | "failed">(
+    "idle",
+  );
+  const [engineRemainingMs, setEngineRemainingMs] = useState(0);
+  const enginePhaseRef = useRef(enginePhase);
+  enginePhaseRef.current = enginePhase;
+  const engineCalibrateSentRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const lastBlinkFlagRef = useRef(false);
   const blinkTimeoutRef = useRef<number | null>(null);
   const advanceTimeoutRef = useRef<number | null>(null);
   const advanceStartedRef = useRef(false);
@@ -890,13 +901,21 @@ function BlinkCalibrationScreen({
     [onComplete],
   );
 
+  // Camera preview. In Electron the Presage SDK (hidden engine-host window)
+  // also holds the camera; Chromium shares one capture between the two, so
+  // this is a second consumer of the same frames, not a second device open.
+  // Kept small (640x360) to stay cheap. If the engine log ever shows fps
+  // collapsing exactly when this screen mounts, this stream is the first
+  // suspect — but the one such run measured was during a Presage credits
+  // outage, so it wasn't proof.
+  const electronEngine = Boolean(window.tacit);
   useEffect(() => {
     let cancelled = false;
 
     async function openCameraPreview() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 360 } },
           audio: false,
         });
         if (cancelled) {
@@ -923,13 +942,45 @@ function BlinkCalibrationScreen({
     };
   }, []);
 
+  const startEngineCalibration = useCallback(() => {
+    if (!window.tacit) return;
+    setEnginePhase("calibrating");
+    setEngineRemainingMs(0);
+    window.tacit.sendEngineControl({ type: "calibrate" });
+  }, []);
+
+  // (Re)run engine calibration fresh each time this screen is reached, rather
+  // than relying on the one-shot auto-calibration from when the hidden
+  // engine-host window booted — that ran while the app was still on the
+  // patient form, usually with nobody looking at the camera, and if it failed
+  // the engine silently never fires `select` for the rest of the process.
+  useEffect(() => {
+    if (!diagnostics.available || engineCalibrateSentRef.current) return;
+    engineCalibrateSentRef.current = true;
+    startEngineCalibration();
+  }, [diagnostics.available, startEngineCalibration]);
+
   useEffect(() => {
     if (!window.tacit) return;
     const unsubscribe = window.tacit.onEngineEvent((event) => {
-      if (event.type !== "frame") return;
-      const blinkFlag = event.payload.blinkFlag === true;
-      if (blinkFlag && !lastBlinkFlagRef.current) registerBlink();
-      lastBlinkFlagRef.current = blinkFlag;
+      if (event.type === "calibration") {
+        // Only react to the run we asked for (ignore the launch-time one).
+        if (enginePhaseRef.current !== "calibrating") return;
+        const { phase } = event.payload;
+        if (phase === "countdown" || phase === "sampling") {
+          // Emitted every frame (~30/s); only re-render when the shown second changes.
+          const seconds = Math.ceil((event.payload.remainingMs ?? 0) / 1000) * 1000;
+          setEngineRemainingMs((current) => (current === seconds ? current : seconds));
+        } else {
+          setEnginePhase(phase === "done" ? "ready" : "failed");
+        }
+        return;
+      }
+      // Count the engine's real `select` events (a deliberate ~250-1000 ms
+      // closure) — the same gesture that drives the boards — instead of
+      // Presage's raw blinkFlag, which also fires on natural blinks that
+      // would never select anything.
+      if (event.type === "select" && enginePhaseRef.current === "ready") registerBlink();
     });
     return unsubscribe;
   }, [registerBlink]);
@@ -965,11 +1016,32 @@ function BlinkCalibrationScreen({
     setAdvancing(false);
     setBlinkCount(0);
     setBlinkDetected(false);
-    lastBlinkFlagRef.current = false;
+    startEngineCalibration();
     onRetry();
   }
 
+  // Engine calibration only advances on camera frames, so if the Presage
+  // SDK is refusing to start (bad key, no credits — see the engine event
+  // log) the countdown would sit at "1s" forever. Treat an engine error, or
+  // 12 s with no progress, as a failure and say why.
+  const engineDown = diagnostics.status === "error";
+  useEffect(() => {
+    if (enginePhase !== "calibrating") return;
+    if (engineDown) {
+      setEnginePhase("failed");
+      return;
+    }
+    const timer = window.setTimeout(() => setEnginePhase("failed"), 12000);
+    return () => window.clearTimeout(timer);
+  }, [enginePhase, engineDown]);
+
   const ready = blinkCount >= 3;
+  const engineCalibrating = enginePhase === "calibrating";
+  const engineFailed = enginePhase === "failed";
+  const engineWarnings = enginePhase === "ready" ? diagnostics.warnings : [];
+  const engineFailureHint = engineDown
+    ? `Camera engine error: ${diagnostics.lastError ?? "see engine-events.log"}`
+    : "Face the camera in good light, then press Retry.";
 
   return (
     <section
@@ -981,7 +1053,9 @@ function BlinkCalibrationScreen({
       </p>
       <h1 className="font-display text-3xl font-semibold md:text-4xl">Blink Calibration</h1>
       <p className="mx-auto mt-2 max-w-lg text-base text-muted-foreground">
-        Look at the camera and blink normally. Communication starts automatically after 3 blinks.
+        {engineCalibrating
+          ? "Look at the camera and keep your eyes open while it learns your face."
+          : "Blink deliberately — close your eyes for about half a second, then open. Communication starts automatically after 3 blinks."}
       </p>
 
       {/* Camera on the left sized by the AVAILABLE HEIGHT (not the width), so
@@ -1002,6 +1076,36 @@ function BlinkCalibrationScreen({
                 <p className="text-sm text-white/70">{cameraError}</p>
               </div>
             )}
+            {electronEngine && (
+              // Engine tracking status over the preview — the SDK's view of
+              // the same camera. "Engine error" = Presage refused to start
+              // (e.g. 402 Insufficient credits — see the engine event log).
+              <div
+                className={cn(
+                  "absolute bottom-3 left-3 flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-semibold text-white shadow-md backdrop-blur-sm",
+                  diagnostics.status === "error"
+                    ? "bg-destructive/85"
+                    : diagnostics.face
+                      ? "bg-success/85"
+                      : "bg-black/60",
+                )}
+                role="status"
+                aria-live="polite"
+              >
+                {diagnostics.face ? (
+                  <Check className="size-4" aria-hidden="true" />
+                ) : (
+                  <CameraOff className="size-4" aria-hidden="true" />
+                )}
+                {diagnostics.status === "error"
+                  ? `Engine error — ${diagnostics.lastError ?? "see log"}`
+                  : !diagnostics.available
+                    ? "Engine starting…"
+                    : diagnostics.face
+                      ? `Face tracked · eyes ${diagnostics.eye}`
+                      : "Looking for your face…"}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1010,11 +1114,26 @@ function BlinkCalibrationScreen({
             <p
               className={cn(
                 "font-display text-2xl font-semibold",
-                advancing || blinkDetected ? "text-success" : "text-foreground",
+                advancing || blinkDetected
+                  ? "text-success"
+                  : engineFailed
+                    ? "text-destructive"
+                    : "text-foreground",
               )}
             >
               {advancing ? (
                 "Calibration complete ✓"
+              ) : engineCalibrating ? (
+                <span
+                  className="inline-flex items-center justify-center gap-3"
+                  role="status"
+                  aria-label="Calibrating camera"
+                >
+                  <span>Hold still, eyes open</span>
+                  <span className="calibration-loader" aria-hidden="true" />
+                </span>
+              ) : engineFailed ? (
+                engineDown ? "Camera engine not running" : "Couldn't see your face"
               ) : blinkDetected ? (
                 "Blink detected ✓"
               ) : (
@@ -1029,8 +1148,19 @@ function BlinkCalibrationScreen({
               )}
             </p>
             <p className="mt-2 text-sm text-muted-foreground">
-              {advancing ? "Starting communication..." : `Blink count: ${blinkCount} / 3`}
+              {advancing
+                ? "Starting communication..."
+                : engineCalibrating
+                  ? `Learning your open eyes… ${Math.ceil(engineRemainingMs / 1000)}s`
+                  : engineFailed
+                    ? engineFailureHint
+                    : `Blink count: ${blinkCount} / 3`}
             </p>
+            {engineWarnings.length > 0 && (
+              <p className="mt-2 rounded-md border border-amber/40 bg-amber/10 px-2 py-1 text-xs text-amber">
+                Blinks are paused: {engineWarnings.join(" · ")}
+              </p>
+            )}
             <div className="mt-4 grid grid-cols-3 gap-2" aria-hidden="true">
               {[0, 1, 2].map((step) => (
                 <span

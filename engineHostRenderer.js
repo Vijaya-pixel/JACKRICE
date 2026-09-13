@@ -147,6 +147,12 @@ const EVENT_NAMES = [
         return;
       }
       if (name === 'vitals') vitalsCalTick(report, payload, payload.t);
+      if (name === 'error') {
+        // Error instances structured-clone to {} over IPC — flatten first.
+        const e = payload.error || {};
+        report('error', { error: { message: e.message || String(e), name: e.name, code: e.code, retryable: e.retryable } });
+        return;
+      }
       report(name, payload);
     });
   }
