@@ -19,7 +19,7 @@ import { RoleGate } from "@/components/role-gate";
 import { SiteHeader } from "@/components/site-header";
 import { SpeechControls, TextToSpeechProvider } from "@/components/text-to-speech";
 import { Button } from "@/components/ui/button";
-import { useBlinkInput } from "@/hooks/useBlinkInput";
+import { suppressBlinkInputFor, useBlinkInput } from "@/hooks/useBlinkInput";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
 import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import { useVitalsRecorder, VITAL_TYPES } from "@/hooks/useVitalsRecorder";
@@ -819,18 +819,30 @@ function BlinkCalibrationScreen({
 }) {
   const [blinkCount, setBlinkCount] = useState(calibrationState.detectedBlinkCount);
   const [blinkDetected, setBlinkDetected] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const lastBlinkFlagRef = useRef(false);
   const blinkTimeoutRef = useRef<number | null>(null);
+  const advanceTimeoutRef = useRef<number | null>(null);
+  const advanceStartedRef = useRef(false);
 
   const registerBlink = useCallback(() => {
+    if (advancing) return;
     setBlinkDetected(true);
     setBlinkCount((current) => Math.min(3, current + 1));
     if (blinkTimeoutRef.current) window.clearTimeout(blinkTimeoutRef.current);
     blinkTimeoutRef.current = window.setTimeout(() => setBlinkDetected(false), 650);
-  }, []);
+  }, [advancing]);
+
+  const finishCalibration = useCallback(
+    (count: number) => {
+      suppressBlinkInputFor(1600);
+      onComplete(count);
+    },
+    [onComplete],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -877,21 +889,33 @@ function BlinkCalibrationScreen({
 
   useEffect(() => {
     const handleKey = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat) return;
+      if (event.code !== "Space" || event.repeat || advancing) return;
       event.preventDefault();
       registerBlink();
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [registerBlink]);
+  }, [advancing, registerBlink]);
+
+  useEffect(() => {
+    if (blinkCount < 3 || advanceStartedRef.current) return;
+    advanceStartedRef.current = true;
+    setAdvancing(true);
+    suppressBlinkInputFor(1800);
+    advanceTimeoutRef.current = window.setTimeout(() => finishCalibration(3), 950);
+  }, [blinkCount, finishCalibration]);
 
   useEffect(() => {
     return () => {
       if (blinkTimeoutRef.current) window.clearTimeout(blinkTimeoutRef.current);
+      if (advanceTimeoutRef.current) window.clearTimeout(advanceTimeoutRef.current);
     };
   }, []);
 
   function retry() {
+    if (advanceTimeoutRef.current) window.clearTimeout(advanceTimeoutRef.current);
+    advanceStartedRef.current = false;
+    setAdvancing(false);
     setBlinkCount(0);
     setBlinkDetected(false);
     lastBlinkFlagRef.current = false;
@@ -907,7 +931,7 @@ function BlinkCalibrationScreen({
       </p>
       <h1 className="font-display text-3xl font-semibold md:text-5xl">Blink Calibration</h1>
       <p className="mx-auto mt-4 max-w-lg text-lg text-muted-foreground">
-        Look at the camera and blink normally.
+        Look at the camera and blink normally. Communication starts automatically after 3 blinks.
       </p>
 
       <div className="relative mx-auto mt-8 aspect-video w-full overflow-hidden rounded-lg border-2 border-border bg-[#0d1424]">
@@ -928,27 +952,38 @@ function BlinkCalibrationScreen({
       <div className="mx-auto mt-8 max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
         <p className={cn(
           "font-display text-3xl font-semibold",
-          blinkDetected ? "text-success" : "text-foreground",
+          advancing || blinkDetected ? "text-success" : "text-foreground",
         )}>
-          {blinkDetected ? "Blink detected ✓" : "Waiting for blink..."}
+          {advancing ? "Calibration complete ✓" : blinkDetected ? "Blink detected ✓" : "Waiting for blink..."}
         </p>
         <p className="mt-3 text-sm text-muted-foreground">
-          Blink count: {blinkCount} / 3
+          {advancing ? "Starting communication..." : `Blink count: ${blinkCount} / 3`}
         </p>
+        <div className="mt-5 grid grid-cols-3 gap-2" aria-hidden="true">
+          {[0, 1, 2].map((step) => (
+            <span
+              key={step}
+              className={cn(
+                "h-2 rounded-full transition-colors",
+                blinkCount > step ? "bg-success" : "bg-muted",
+              )}
+            />
+          ))}
+        </div>
         <p className="mt-2 font-mono text-[11px] text-muted-foreground">
           patient: {patient.patientId} · session: {session.id}
         </p>
       </div>
 
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button size="lg" variant="outline" onClick={retry}>
+        <Button size="lg" variant="outline" onClick={retry} disabled={advancing}>
           Retry
         </Button>
-        <Button size="lg" variant="outline" onClick={() => onComplete(blinkCount)}>
+        <Button size="lg" variant="outline" onClick={() => finishCalibration(blinkCount)} disabled={advancing}>
           Skip Calibration
         </Button>
-        <Button size="lg" disabled={!ready} onClick={() => onComplete(blinkCount)}>
-          Continue
+        <Button size="lg" disabled={!ready || advancing} onClick={() => finishCalibration(blinkCount)}>
+          {advancing ? "Starting..." : "Continue"}
         </Button>
       </div>
     </section>
@@ -1180,10 +1215,6 @@ const KEYBOARD_LAYOUT: KeyboardKeyValue[][] = [
   ["R", "C", "G", "DONE", "CLEAR", "X"],
   ["U", "Y", "V", "J", "Q", "Z"],
 ];
-
-function estimateSelectionsForText(text: string) {
-  return text.replace(/\s/g, "").length + Math.max(0, text.trim().split(/\s+/).length - 1);
-}
 
 function useScanController({
   itemCount,
@@ -1790,13 +1821,6 @@ function BlinkKeyboardCommunicationScreen({
   const [scanMode, setScanMode] = useState<KeyboardScanMode>("ROWS");
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [scanIntervalMs, setScanIntervalMs] = useState(KEYBOARD_SCAN_INTERVAL_MS);
-  const [intentionalBlinkCount, setIntentionalBlinkCount] = useState(0);
-  const [charactersEntered, setCharactersEntered] = useState(0);
-  const [manualSelectionCount, setManualSelectionCount] = useState(0);
-  const [aiAssistedSelectionCount, setAiAssistedSelectionCount] = useState(0);
-  const [estimatedSelectionsSaved, setEstimatedSelectionsSaved] = useState(0);
-  const [messageStartTime, setMessageStartTime] = useState<number | null>(null);
-  const [messageCompletionTime, setMessageCompletionTime] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1808,10 +1832,6 @@ function BlinkKeyboardCommunicationScreen({
         : selectedRowIndex === null
           ? []
           : KEYBOARD_LAYOUT[selectedRowIndex] ?? [];
-
-  const ensureMessageStarted = useCallback(() => {
-    setMessageStartTime((current) => current ?? Date.now());
-  }, []);
 
   useEffect(() => {
     const typedText = message.replace(/\s+/g, " ").trim();
@@ -1909,9 +1929,8 @@ function BlinkKeyboardCommunicationScreen({
 
         setCompletedMessage(completedText.trim());
         setMessage("");
-        setMessageCompletionTime(completionTime);
-        setMessageStartTime(null);
-        setScanMode("SUGGESTIONS");
+        setSuggestions([]);
+        setScanMode("ROWS");
         setSelectedRowIndex(null);
       } catch (saveError) {
         console.error("[tacit] keyboard interaction save failed:", saveError);
@@ -1925,35 +1944,26 @@ function BlinkKeyboardCommunicationScreen({
 
   const selectCurrentItem = useCallback(
     (itemIndex: number) => {
-      setIntentionalBlinkCount((current) => current + 1);
       setError(null);
 
       if (scanMode === "SUGGESTIONS") {
         const selectedSuggestion = suggestionScanItems[itemIndex];
         if (!selectedSuggestion) return;
 
-        ensureMessageStarted();
         const visiblePrefix = message.replace(/\s+/g, " ").trim();
         const completedSuggestion =
           visiblePrefix && selectedSuggestion.toLowerCase().startsWith(visiblePrefix.toLowerCase())
             ? `${message}${selectedSuggestion.slice(visiblePrefix.length)}`
             : selectedSuggestion;
-        setAiAssistedSelectionCount((current) => current + 1);
         lastCompletionRequestRef.current = completedSuggestion.replace(/\s+/g, " ").trim();
         setMessage(completedSuggestion);
-        setEstimatedSelectionsSaved((current) => (
-          current + Math.max(
-            0,
-            estimateSelectionsForText(completedSuggestion) - estimateSelectionsForText(message) - 1,
-          )
-        ));
+        setSuggestions([]);
         setScanMode("ROWS");
         setSelectedRowIndex(null);
         return;
       }
 
       if (scanMode === "ROWS") {
-        setManualSelectionCount((current) => current + 1);
         setSelectedRowIndex(itemIndex);
         setScanMode("COLUMNS");
         return;
@@ -1963,12 +1973,11 @@ function BlinkKeyboardCommunicationScreen({
 
       const selectedKey = KEYBOARD_LAYOUT[selectedRowIndex]?.[itemIndex];
       if (!selectedKey) return;
-      setManualSelectionCount((current) => current + 1);
 
       if (selectedKey === "DONE") {
         void completeMessage(message);
       } else if (selectedKey === "BACKSPACE") {
-        ensureMessageStarted();
+        setSuggestions([]);
         setMessage((current) => current.slice(0, -1));
       } else if (selectedKey === "CLEAR") {
         if (message && !window.confirm("Clear the current message?")) {
@@ -1976,12 +1985,12 @@ function BlinkKeyboardCommunicationScreen({
           setSelectedRowIndex(null);
           return;
         }
+        setSuggestions([]);
         setMessage("");
       } else {
-        ensureMessageStarted();
+        setSuggestions([]);
         const value = selectedKey === "SPACE" ? " " : selectedKey;
         setMessage((current) => current + value);
-        setCharactersEntered((current) => current + 1);
       }
 
       setScanMode("ROWS");
@@ -1989,7 +1998,6 @@ function BlinkKeyboardCommunicationScreen({
     },
     [
       completeMessage,
-      ensureMessageStarted,
       message,
       scanMode,
       selectedRowIndex,
@@ -2007,17 +2015,17 @@ function BlinkKeyboardCommunicationScreen({
           setScanMode("ROWS");
           setSelectedRowIndex(null);
         }
+      : scanMode === "ROWS" && suggestionScanItems.length > 0
+        ? () => {
+            setScanMode("SUGGESTIONS");
+            setSelectedRowIndex(null);
+          }
       : undefined,
   });
 
   useEffect(() => {
     setCurrentScanIndex(0);
   }, [scanMode, selectedRowIndex, setCurrentScanIndex]);
-
-  const messageDurationSeconds =
-    messageStartTime && messageCompletionTime
-      ? Math.round((messageCompletionTime - messageStartTime) / 1000)
-      : null;
 
   return (
     <section className="w-full max-w-6xl animate-fade-in" aria-label="Blink keyboard communication">
@@ -2064,7 +2072,7 @@ function BlinkKeyboardCommunicationScreen({
         </p>
       )}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_16rem]">
+      <div className="mt-6">
         <div>
           <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -2095,7 +2103,7 @@ function BlinkKeyboardCommunicationScreen({
               : suggestionError
                 ? `Predictive text unavailable: ${suggestionError}. Keyboard still works.`
                 : suggestions.length
-                  ? "Scan a completion, or wait for row scanning to continue."
+                  ? "Suggestions stay in the scan loop until the next key changes the message."
                   : "Keyboard row scanning is active."}
           </div>
 
@@ -2162,8 +2170,9 @@ function BlinkKeyboardCommunicationScreen({
                           keyValue === "CLEAR" && !rowKeyActive && !keyActive && "border-destructive/40 bg-destructive/10 text-destructive",
                         )}
                         aria-current={keyActive ? "true" : undefined}
+                        aria-label={keyValue === "BACKSPACE" ? "Backspace" : keyValue}
                       >
-                        {keyValue}
+                        {keyValue === "BACKSPACE" ? "\u2190" : keyValue}
                       </button>
                     );
                   })}
@@ -2172,46 +2181,6 @@ function BlinkKeyboardCommunicationScreen({
             })}
           </div>
         </div>
-
-        <aside className="rounded-lg border border-border bg-card p-4 text-sm shadow-sm">
-          <p className="font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-            Debug
-          </p>
-          <dl className="mt-3 space-y-2">
-            <div className="flex justify-between gap-4">
-              <dt>scanMode</dt>
-              <dd className="font-mono">{scanMode}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>currentScanIndex</dt>
-              <dd className="font-mono">{currentScanIndex}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>intentionalBlinkCount</dt>
-              <dd className="font-mono">{intentionalBlinkCount}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>charactersEntered</dt>
-              <dd className="font-mono">{charactersEntered}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>manualSelectionCount</dt>
-              <dd className="font-mono">{manualSelectionCount}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>aiAssistedSelectionCount</dt>
-              <dd className="font-mono">{aiAssistedSelectionCount}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>estimatedSelectionsSaved</dt>
-              <dd className="font-mono">{estimatedSelectionsSaved}</dd>
-            </div>
-            <div className="flex justify-between gap-4">
-              <dt>messageSeconds</dt>
-              <dd className="font-mono">{messageDurationSeconds ?? "active"}</dd>
-            </div>
-          </dl>
-        </aside>
       </div>
 
       <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
@@ -2303,11 +2272,6 @@ function SessionSummaryScreen({
           <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-muted-foreground">
             Summary for {patient.name} ({patient.patientId}).
           </p>
-          <div className="mx-auto mt-5 grid w-fit gap-1 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs text-muted-foreground">
-            <span>session: {session.id}</span>
-            <span>started: {new Date(session.startedAt).toLocaleString()}</span>
-            <span>last message: {spokenMessage || "none"}</span>
-          </div>
         </div>
 
         <div className="mt-8">
