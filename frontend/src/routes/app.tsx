@@ -898,7 +898,7 @@ function BlinkCalibrationScreen({
   function completeCalibration(action: "skip" | "continue") {
     if (calibrationAction || (action === "continue" && !ready)) return;
     setCalibrationAction(action);
-    window.setTimeout(() => onComplete(blinkCount), 500);
+    window.setTimeout(() => onComplete(blinkCount), 300);
   }
 
   return (
@@ -951,7 +951,7 @@ function BlinkCalibrationScreen({
           onClick={() => completeCalibration("skip")}
           disabled={Boolean(calibrationAction)}
           className={cn(
-            "transition-[transform,opacity,filter] duration-500 ease-in-out",
+            "transition-[transform,opacity,filter] duration-300 ease-in-out",
             calibrationAction === "skip" && "scale-50 opacity-0 blur-sm",
           )}
         >
@@ -962,7 +962,7 @@ function BlinkCalibrationScreen({
           disabled={!ready || Boolean(calibrationAction)}
           onClick={() => completeCalibration("continue")}
           className={cn(
-            "transition-[transform,opacity,filter] duration-500 ease-in-out",
+            "transition-[transform,opacity,filter] duration-300 ease-in-out",
             calibrationAction === "continue" && "scale-50 opacity-0 blur-sm",
           )}
         >
