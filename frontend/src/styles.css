@@ -277,6 +277,12 @@
   min-height: 0;
 }
 
+.machine-auth-display {
+  align-items: flex-start !important;
+  padding-top: clamp(1rem, 5vh, 3rem) !important;
+  padding-bottom: clamp(2rem, 7vh, 4rem) !important;
+}
+
 .machine-page::after {
   content: "";
   position: absolute;

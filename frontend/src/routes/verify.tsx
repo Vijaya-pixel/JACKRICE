@@ -51,7 +51,7 @@ function VerifyPage() {
     <main className="machine-page machine-scroll-page flex min-h-svh flex-col bg-muted/40 pt-[76px]">
       <SiteHeader />
 
-      <div className="machine-display mx-auto flex w-full max-w-[1500px] flex-1 items-center justify-center px-5 py-10 md:px-8">
+      <div className="machine-display machine-auth-display mx-auto flex w-full max-w-[1500px] flex-1 items-center justify-center px-5 py-10 md:px-8">
         <section
           aria-label="Clinician verification"
           className="machine-module w-full max-w-md rounded-xl border-2 border-border bg-card"
