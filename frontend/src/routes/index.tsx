@@ -34,7 +34,7 @@ function HomePage() {
     event.stopPropagation();
     if (launching) return;
     setLaunching(destination);
-    window.setTimeout(() => void navigate({ to: destination }), 500);
+    window.setTimeout(() => void navigate({ to: destination }), 400);
   }
 
   return (
@@ -59,7 +59,7 @@ function HomePage() {
             <button
               type="button"
               onClick={(event) => launchPage(event, "/app")}
-              className={`inline-flex will-change-transform items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground transition-[transform,opacity,filter] duration-500 ease-in-out ${launching === "/app" ? "scale-50 opacity-0 blur-sm" : ""}`}
+              className={`inline-flex will-change-transform items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground transition-[transform,opacity,filter] duration-400 ease-in-out ${launching === "/app" ? "scale-50 opacity-0 blur-sm" : ""}`}
             >
               Try the Prototype
               <span aria-hidden="true">→</span>
@@ -67,7 +67,7 @@ function HomePage() {
             <button
               type="button"
               onClick={(event) => launchPage(event, "/how-it-works")}
-              className={`inline-flex will-change-transform items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-[transform,opacity,filter,background-color,color] duration-500 ease-in-out hover:bg-foreground hover:text-background ${launching === "/how-it-works" ? "scale-50 opacity-0 blur-sm" : ""}`}
+              className={`inline-flex will-change-transform items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-[transform,opacity,filter,background-color,color] duration-400 ease-in-out hover:bg-foreground hover:text-background ${launching === "/how-it-works" ? "scale-50 opacity-0 blur-sm" : ""}`}
             >
               Watch Demo
               <span aria-hidden="true">▶</span>
