@@ -67,7 +67,7 @@ function HomePage() {
             <Link
               to="/how-it-works"
               onClick={(event) => launchPage(event, "/how-it-works")}
-              className={`inline-flex will-change-transform items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-[transform,opacity,filter] duration-600 ease-in-out ${launching === "/how-it-works" ? "scale-50 opacity-0 blur-sm" : ""}`}
+              className={`inline-flex will-change-transform items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-[transform,opacity,filter,background-color,color] duration-600 ease-in-out hover:bg-foreground hover:text-background ${launching === "/how-it-works" ? "scale-50 opacity-0 blur-sm" : ""}`}
             >
               Watch Demo
               <span aria-hidden="true">▶</span>
