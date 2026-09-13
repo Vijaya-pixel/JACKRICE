@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Camera, CameraOff, Eye, Grid3x3, Keyboard, Volume2 } from "lucide-react";
 
@@ -81,6 +81,15 @@ const LANDMARKS: Array<[number, number]> = [
 ];
 
 function HowItWorksPage() {
+  const navigate = Route.useNavigate();
+  const [launching, setLaunching] = useState<"/app" | "/clinician" | null>(null);
+
+  function launchPage(destination: "/app" | "/clinician") {
+    if (launching) return;
+    setLaunching(destination);
+    window.setTimeout(() => void navigate({ to: destination }), 300);
+  }
+
   return (
     <main className="machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
@@ -120,11 +129,22 @@ function HowItWorksPage() {
         </div>
 
         <div className="mt-10 flex flex-wrap gap-3">
-          <Button asChild size="lg">
-            <Link to="/app">Open the patient experience</Link>
+          <Button
+            size="lg"
+            onClick={() => launchPage("/app")}
+            disabled={Boolean(launching)}
+            className={launching === "/app" ? "scale-125 opacity-0 blur-md" : "transition-[transform,opacity,filter] duration-300 ease-out"}
+          >
+            Open the patient experience
           </Button>
-          <Button asChild size="lg" variant="outline">
-            <Link to="/clinician">See the clinician overview</Link>
+          <Button
+            size="lg"
+            variant="outline"
+            onClick={() => launchPage("/clinician")}
+            disabled={Boolean(launching)}
+            className={launching === "/clinician" ? "scale-125 opacity-0 blur-md" : "transition-[transform,opacity,filter] duration-300 ease-out"}
+          >
+            See the clinician overview
           </Button>
         </div>
 
