@@ -51,9 +51,10 @@ export function SiteHeader() {
                 to={item.to}
                 className={baseLink}
                 activeOptions={{ exact: item.to === "/" }}
-                activeProps={{ className: activeLink, "aria-current": "page" }}
+                activeProps={{ className: `${baseLink} ${activeLink}`, "aria-current": "page" }}
               >
-                {item.label}
+                  <span className="machine-nav-full">{item.label}</span>
+                  <span className="machine-nav-short">{item.short}</span>
               </Link>
             ))}
           </nav>
@@ -67,13 +68,14 @@ export function SiteHeader() {
               <Link
                 key={item.to}
                 to={item.to}
-                className="rounded-md px-2 py-1.5 text-xs font-semibold text-machine-ink/75"
+                className={baseLink}
                 activeOptions={{ exact: item.to === "/" }}
                 activeProps={{
-                  className: "!text-machine-ink underline decoration-machine-cyan underline-offset-4",
+                  className: `${baseLink} !text-machine-ink underline decoration-machine-cyan underline-offset-4`,
                 }}
               >
-                {item.label}
+                <span className="machine-nav-full">{item.label}</span>
+                <span className="machine-nav-short">{item.short}</span>
               </Link>
             ))}
           </nav>
