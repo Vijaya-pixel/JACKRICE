@@ -29,7 +29,7 @@ function HomePage() {
   const navigate = Route.useNavigate();
   const [launching, setLaunching] = useState<"/app" | "/how-it-works" | null>(null);
 
-  function launchPage(event: React.MouseEvent<HTMLAnchorElement>, destination: "/app" | "/how-it-works") {
+  function launchPage(event: React.MouseEvent<HTMLButtonElement>, destination: "/app" | "/how-it-works") {
     event.preventDefault();
     event.stopPropagation();
     if (launching) return;
@@ -56,22 +56,22 @@ function HomePage() {
           </p>
 
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              to="/app"
+            <button
+              type="button"
               onClick={(event) => launchPage(event, "/app")}
               className={`inline-flex will-change-transform items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground transition-[transform,opacity,filter] duration-600 ease-in-out ${launching === "/app" ? "scale-50 opacity-0 blur-sm" : ""}`}
             >
               Try the Prototype
               <span aria-hidden="true">→</span>
-            </Link>
-            <Link
-              to="/how-it-works"
+            </button>
+            <button
+              type="button"
               onClick={(event) => launchPage(event, "/how-it-works")}
               className={`inline-flex will-change-transform items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-[transform,opacity,filter,background-color,color] duration-600 ease-in-out hover:bg-foreground hover:text-background ${launching === "/how-it-works" ? "scale-50 opacity-0 blur-sm" : ""}`}
             >
               Watch Demo
               <span aria-hidden="true">▶</span>
-            </Link>
+            </button>
           </div>
 
           <div className="mt-4 flex items-center justify-center gap-4 text-sm font-medium text-muted-foreground">
