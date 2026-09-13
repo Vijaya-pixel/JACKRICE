@@ -2028,62 +2028,42 @@ function BlinkKeyboardCommunicationScreen({
   }, [scanMode, selectedRowIndex, setCurrentScanIndex]);
 
   return (
-    <section className="w-full max-w-6xl animate-fade-in" aria-label="Blink keyboard communication">
-      <div className="text-center">
-        <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-          Communication
-        </p>
-        <h1 className="font-display text-3xl font-semibold md:text-5xl">Blink Keyboard</h1>
-      </div>
+    <section className="w-full max-w-[76rem] animate-fade-in lg:-mt-10" aria-label="Blink keyboard communication">
+      <div className="grid gap-5 lg:grid-cols-[23rem_minmax(0,1fr)] lg:items-stretch">
+        <div className="flex min-h-[28rem] flex-col rounded-lg border border-border bg-card p-5 shadow-sm">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+              Communication
+            </p>
+            <h1 className="mt-1 font-display text-3xl font-semibold md:text-4xl">Blink Keyboard</h1>
 
-      <div className="mt-6 rounded-lg border-2 border-border bg-card p-5 text-center shadow-sm md:p-7">
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-          Current message
-        </p>
-        <p
-          className={cn(
-            "mt-3 min-h-16 break-words font-display text-4xl font-semibold leading-tight md:text-6xl",
-            !message && "text-muted-foreground",
-          )}
-        >
-          {message || "Waiting..."}
-        </p>
-      </div>
-
-      <div className="mt-4 rounded-lg border border-border bg-muted/30 px-4 py-3 text-center">
-        <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">
-          {scanMode === "SUGGESTIONS"
-            ? "Scanning suggestions"
-            : scanMode === "ROWS"
-              ? "Scanning keyboard rows"
-              : `Scanning row ${(selectedRowIndex ?? 0) + 1} keys`}
-        </p>
-      </div>
-
-      {completedMessage && (
-        <div className="mt-4 rounded-lg border border-success/40 bg-success/10 px-4 py-3 text-center text-success">
-          <p className="text-sm font-semibold uppercase tracking-[0.16em]">Completed message saved</p>
-          <p className="mt-1 text-lg font-semibold">{completedMessage}</p>
-        </div>
-      )}
-      {error && (
-        <p className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm font-medium text-destructive">
-          {error}
-        </p>
-      )}
-
-      <div className="mt-6">
-        <div>
-          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">
-                Word Suggestions
+            <div className="mt-5 rounded-lg border-2 border-border bg-background p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Current message
               </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Suggestions fill the message only after blink selection. Select DONE to confirm.
+              <p
+                className={cn(
+                  "mt-2 min-h-32 max-h-48 overflow-y-auto break-words font-display text-3xl font-semibold leading-tight md:text-4xl",
+                  !message && "text-muted-foreground",
+                )}
+              >
+                {message || "Waiting..."}
               </p>
             </div>
-            <label className="text-sm font-medium text-foreground">
+
+            <div className="mt-3 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
+                {scanMode === "SUGGESTIONS"
+                  ? "Scanning suggestions"
+                  : scanMode === "ROWS"
+                    ? "Scanning rows"
+                    : `Scanning row ${(selectedRowIndex ?? 0) + 1}`}
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-5 space-y-5">
+            <label className="block text-sm font-medium text-foreground">
               Scan speed
               <select
                 value={scanIntervalMs}
@@ -2095,19 +2075,47 @@ function BlinkKeyboardCommunicationScreen({
                 <option value={1250}>Slow</option>
               </select>
             </label>
+
+            {completedMessage && (
+              <div className="rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-success">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em]">Message saved</p>
+                <p className="mt-1 text-sm font-semibold">{completedMessage}</p>
+              </div>
+            )}
+            {error && (
+              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm font-medium text-destructive">
+                {error}
+              </p>
+            )}
+
+            <div className="flex flex-wrap gap-3">
+              <Button variant="outline" onClick={onBack}>
+                Back to Board
+              </Button>
+              <Button onClick={onContinue}>
+                Continue
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-w-0 rounded-lg border border-border bg-card/70 p-5 shadow-sm">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-primary">
+              Word Suggestions
+            </p>
+            <p className="text-right text-sm text-muted-foreground">
+              {suggestionLoading
+                ? "Updating Gemini predictions..."
+                : suggestionError
+                  ? `Predictive text unavailable: ${suggestionError}. Keyboard still works.`
+                  : suggestions.length
+                    ? "Suggestions stay active until the next key changes the message."
+                    : "Keyboard row scanning is active."}
+            </p>
           </div>
 
-          <div className="mb-3 min-h-6 text-sm text-muted-foreground">
-            {suggestionLoading
-              ? "Updating Gemini predictions..."
-              : suggestionError
-                ? `Predictive text unavailable: ${suggestionError}. Keyboard still works.`
-                : suggestions.length
-                  ? "Suggestions stay in the scan loop until the next key changes the message."
-                  : "Keyboard row scanning is active."}
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid min-h-16 gap-2 md:grid-cols-3">
             {suggestionScanItems.map((suggestion, suggestionIndex) => {
               const active = scanMode === "SUGGESTIONS" && currentScanIndex === suggestionIndex;
               return (
@@ -2116,9 +2124,9 @@ function BlinkKeyboardCommunicationScreen({
                   type="button"
                   onClick={() => selectCurrentItem(suggestionIndex)}
                   className={cn(
-                    "min-h-24 rounded-lg border-2 bg-card px-4 py-4 text-lg font-semibold shadow-sm transition focus:outline-none focus:ring-4 focus:ring-primary/25",
+                    "min-h-16 rounded-lg border-2 bg-card px-3 py-2 text-base font-semibold shadow-sm transition focus:outline-none focus:ring-4 focus:ring-primary/25",
                     active
-                      ? "scale-[1.03] border-primary bg-primary text-primary-foreground shadow-lg"
+                      ? "scale-[1.02] border-primary bg-primary text-primary-foreground shadow-lg"
                       : "border-border hover:border-primary/60",
                   )}
                   aria-current={active ? "true" : undefined}
@@ -2129,7 +2137,7 @@ function BlinkKeyboardCommunicationScreen({
             })}
           </div>
 
-          <div className="mt-6 grid gap-3">
+          <div className="mt-4 grid gap-2">
             {KEYBOARD_LAYOUT.map((row, rowIndex) => {
               const rowActive = scanMode === "ROWS" && currentScanIndex === rowIndex;
               const rowSelected = scanMode === "COLUMNS" && selectedRowIndex === rowIndex;
@@ -2137,8 +2145,8 @@ function BlinkKeyboardCommunicationScreen({
                 <div
                   key={`row-${rowIndex}`}
                   className={cn(
-                    "grid grid-cols-6 gap-2 rounded-lg border-2 p-2 transition",
-                    rowActive && "scale-[1.01] border-primary bg-primary/15 shadow-lg",
+                    "grid grid-cols-6 gap-2 rounded-lg border-2 p-1.5 transition",
+                    rowActive && "scale-[1.005] border-primary bg-primary/15 shadow-lg",
                     rowSelected && "border-success bg-success/10",
                     !rowActive && !rowSelected && "border-transparent",
                   )}
@@ -2160,11 +2168,11 @@ function BlinkKeyboardCommunicationScreen({
                           }
                         }}
                         className={cn(
-                          "min-h-20 rounded-md border-2 bg-card px-2 py-3 text-center font-display text-xl font-semibold shadow-sm transition md:min-h-24 md:text-2xl",
+                          "min-h-14 rounded-md border-2 bg-background px-2 py-2 text-center font-display text-lg font-semibold shadow-sm transition md:min-h-[4.25rem] md:text-xl",
                           rowKeyActive
-                            ? "scale-[1.02] border-primary bg-primary text-primary-foreground shadow-lg"
+                            ? "scale-[1.01] border-primary bg-primary text-primary-foreground shadow-lg"
                             : keyActive
-                            ? "scale-[1.05] border-primary bg-primary text-primary-foreground shadow-lg"
+                            ? "scale-[1.03] border-primary bg-primary text-primary-foreground shadow-lg"
                             : "border-border",
                           keyValue === "DONE" && !rowKeyActive && !keyActive && "border-success/50 bg-success/10 text-success",
                           keyValue === "CLEAR" && !rowKeyActive && !keyActive && "border-destructive/40 bg-destructive/10 text-destructive",
@@ -2181,15 +2189,6 @@ function BlinkKeyboardCommunicationScreen({
             })}
           </div>
         </div>
-      </div>
-
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button variant="outline" size="lg" onClick={onBack}>
-          Back to Board
-        </Button>
-        <Button size="lg" onClick={onContinue}>
-          Continue
-        </Button>
       </div>
     </section>
   );
