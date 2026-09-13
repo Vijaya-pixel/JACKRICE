@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Power } from "lucide-react";
+import { useState } from "react";
 
 import { clearRole, useRole } from "@/lib/role";
 
@@ -23,11 +24,16 @@ const activeLink = "!text-machine-ink after:!bg-machine-cyan";
 export function SiteHeader() {
   const navigate = useNavigate();
   const { role } = useRole();
+  const [signingOut, setSigningOut] = useState(false);
   const items = role === "clinician" ? [...BASE_NAV, CLINICIAN_NAV] : BASE_NAV;
 
   const signOut = () => {
-    clearRole();
-    navigate({ to: "/", replace: true });
+    if (signingOut) return;
+    setSigningOut(true);
+    window.setTimeout(() => {
+      clearRole();
+      navigate({ to: "/", replace: true });
+    }, 700);
   };
 
   return (
@@ -76,7 +82,8 @@ export function SiteHeader() {
           <button
             type="button"
             onClick={signOut}
-            className="machine-power flex shrink-0 items-center gap-1.5 rounded-md border border-machine-ink/25 px-3 py-1.5 text-xs font-semibold text-machine-ink transition-colors hover:bg-machine-screen/40"
+            disabled={signingOut}
+            className={`machine-power flex shrink-0 items-center gap-1.5 rounded-md border border-machine-ink/25 px-3 py-1.5 text-xs font-semibold text-machine-ink transition-all duration-700 ease-in-out hover:bg-machine-screen/40 ${signingOut ? "scale-50 opacity-0 blur-sm shadow-none" : ""}`}
           >
             <Power className="size-3.5" aria-hidden="true" />
             <span className="hidden sm:inline">Sign out</span>
