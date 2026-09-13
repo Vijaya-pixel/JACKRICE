@@ -1518,6 +1518,7 @@ function OptionBoardCommunicationScreen({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingOptionIndex, setEditingOptionIndex] = useState<number | null>(null);
+  const [continuing, setContinuing] = useState(false);
 
   const options = useMemo<Array<ScanOption<string>>>(() => {
     const labels = boardOptions
@@ -1599,6 +1600,12 @@ function OptionBoardCommunicationScreen({
     setError(null);
     setEditingOptionIndex(null);
     setIndex(0);
+  }
+
+  function continueFromOptionBoard() {
+    if (continuing) return;
+    setContinuing(true);
+    window.setTimeout(onContinue, 300);
   }
 
   return (
@@ -1749,7 +1756,15 @@ function OptionBoardCommunicationScreen({
         <Button variant="outline" size="lg" onClick={scanAgain}>
           Ask Another Prompt
         </Button>
-        <Button size="lg" onClick={onContinue}>
+        <Button
+          size="lg"
+          onClick={continueFromOptionBoard}
+          disabled={continuing}
+          className={cn(
+            "transition-[transform,opacity,filter] duration-300 ease-out",
+            continuing && "scale-125 opacity-0 blur-md",
+          )}
+        >
           Continue
         </Button>
       </div>
