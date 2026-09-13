@@ -349,8 +349,13 @@
   align-items: center;
 }
 .machine-nav-axis { width: clamp(2rem, 8vw, 7rem); }
-.machine-nav-left,
-.machine-nav-right { min-width: 0; }
+.machine-nav-left { position: relative; min-width: 0; width: 100%; justify-content: flex-end; }
+.machine-nav-left nav { margin-left: auto; }
+.machine-nav-logo { position: absolute; left: 0; }
+.machine-nav-right-group { position: relative; width: 100%; }
+.machine-nav-right { min-width: 0; flex: 1 1 auto; justify-content: flex-start; }
+.machine-nav-right-group .machine-power,
+.machine-nav-right-group > span { flex: 0 0 auto; }
 .machine-nav-left a,
 .machine-nav-right a { white-space: nowrap; }
 .machine-logo { filter: brightness(0) saturate(100%) invert(11%) sepia(15%) saturate(1970%) hue-rotate(174deg) brightness(96%); }
