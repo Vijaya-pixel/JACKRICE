@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { SiteHeader } from "@/components/site-header";
 
@@ -25,12 +26,22 @@ export const Route = createFileRoute("/")({
 });
 
 function HomePage() {
+  const navigate = Route.useNavigate();
+  const [launching, setLaunching] = useState<"/app" | "/how-it-works" | null>(null);
+
+  function launchPage(event: React.MouseEvent<HTMLAnchorElement>, destination: "/app" | "/how-it-works") {
+    event.preventDefault();
+    if (launching) return;
+    setLaunching(destination);
+    window.setTimeout(() => void navigate({ to: destination }), 700);
+  }
+
   return (
     <main className="machine-page flex min-h-svh flex-col bg-background pt-[76px]">
       <SiteHeader />
 
       <div className="machine-display mx-auto flex w-full max-w-[1500px] flex-1 flex-col px-5 pb-8 pt-10 md:px-8 md:pt-14">
-        <section className="mx-auto max-w-2xl text-center">
+        <section className="page-copy-reveal mx-auto max-w-2xl text-center">
           <p className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-primary">
             <span aria-hidden="true" className="h-[3px] w-6 rounded-full bg-primary/70" />
             giving voice back
@@ -46,14 +57,16 @@ function HomePage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/app"
-              className="inline-flex items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground transition-colors hover:bg-cta/85"
+              onClick={(event) => launchPage(event, "/app")}
+              className={`inline-flex items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground transition-all duration-800 ease-in-out ${launching === "/app" ? "scale-50 opacity-0 blur-sm" : ""}`}
             >
               Try the Prototype
               <span aria-hidden="true">→</span>
             </Link>
             <Link
               to="/how-it-works"
-              className="inline-flex items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-colors hover:bg-foreground hover:text-background"
+              onClick={(event) => launchPage(event, "/how-it-works")}
+              className={`inline-flex items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-all duration-800 ease-in-out ${launching === "/how-it-works" ? "scale-50 opacity-0 blur-sm" : ""}`}
             >
               Watch Demo
               <span aria-hidden="true">▶</span>

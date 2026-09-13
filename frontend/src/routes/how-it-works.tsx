@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Camera, CameraOff, Eye, Grid3x3, Keyboard, Volume2 } from "lucide-react";
 
 import { SiteHeader } from "@/components/site-header";
@@ -85,7 +85,7 @@ function HowItWorksPage() {
     <main className="machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
 
-      <div className="machine-display mx-auto max-w-5xl px-6 pb-20 pt-28">
+      <div className="page-copy-reveal machine-display mx-auto max-w-5xl px-6 pb-20 pt-28">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
           How it works
         </p>
@@ -102,18 +102,20 @@ function HowItWorksPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             A mock view of the landmark tracking and signal readout used during calibration.
           </p>
-          <div className="mt-4">
+          <div className="origin-center animate-in fade-in zoom-in-50 duration-1000 transform-gpu mt-4">
             <CameraPanel />
           </div>
         </section>
 
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           {STEPS.map(({ icon: Icon, title, body, tone }) => (
-            <section key={title} className={`rounded-xl border border-border p-6 ${tone}`}>
+            <ScrollReveal key={title}>
+            <section className={`rounded-xl border border-border p-6 ${tone}`}>
               <Icon className="size-6 text-machine-ink" />
               <h2 className="mt-4 font-display text-xl font-semibold text-machine-ink">{title}</h2>
               <p className="mt-2 text-sm leading-relaxed text-machine-ink/80">{body}</p>
             </section>
+            </ScrollReveal>
           ))}
         </div>
 
@@ -131,6 +133,32 @@ function HowItWorksPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+function ScrollReveal({ children }: { children: ReactNode }) {
+  const [visible, setVisible] = useState(false);
+  const elementRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (!entry?.isIntersecting) return;
+      setVisible(true);
+      observer.disconnect();
+    }, { threshold: 0.12, rootMargin: "0px 0px -8%" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={elementRef}
+      className={`transform-gpu transition-all duration-700 ease-out ${visible ? "translate-y-0 scale-100 opacity-100" : "translate-y-8 scale-95 opacity-0"}`}
+    >
+      {children}
+    </div>
   );
 }
 

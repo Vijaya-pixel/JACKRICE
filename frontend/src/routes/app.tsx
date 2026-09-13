@@ -400,7 +400,7 @@ function TacitApp() {
   }
 
   return (
-    <main className="machine-page min-h-svh bg-background text-foreground">
+    <main className="page-copy-reveal machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
 
       <PatientView
@@ -902,7 +902,7 @@ function BlinkCalibrationScreen({
         Look at the camera and blink normally.
       </p>
 
-      <div className="relative mx-auto mt-8 aspect-video w-full overflow-hidden rounded-lg border-2 border-border bg-[#0d1424]">
+      <div className="relative mx-auto mt-8 aspect-video w-full origin-center animate-in fade-in zoom-in-50 duration-700 transform-gpu overflow-hidden rounded-lg border-2 border-border bg-[#0d1424]">
         <video
           ref={videoRef}
           muted
@@ -922,7 +922,7 @@ function BlinkCalibrationScreen({
           "font-display text-3xl font-semibold",
           blinkDetected ? "text-success" : "text-foreground",
         )}>
-          {blinkDetected ? "Blink detected ✓" : "Waiting for blink..."}
+          {blinkDetected ? "Blink detected ✓" : <span className="inline-flex items-center justify-center gap-3" role="status" aria-label="Waiting for blink"><span>Waiting for blink</span><span className="calibration-loader" aria-hidden="true" /></span>}
         </p>
         <p className="mt-3 text-sm text-muted-foreground">
           Blink count: {blinkCount} / 3
