@@ -264,6 +264,12 @@
     0 10px 24px color-mix(in oklch, var(--machine-rim) 28%, transparent);
 }
 
+.machine-scroll-page {
+  height: auto;
+  min-height: calc(100svh - 32px) !important;
+  overflow: visible;
+}
+
 .machine-page::after {
   content: "";
   position: absolute;

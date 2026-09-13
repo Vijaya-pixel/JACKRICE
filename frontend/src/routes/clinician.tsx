@@ -31,7 +31,7 @@ function ClinicianPage() {
   const electron = useIsElectron();
   return (
     <RoleGate>
-      <main className="machine-page min-h-svh bg-background text-foreground">
+      <main className="machine-page machine-scroll-page min-h-svh bg-background text-foreground">
         <SiteHeader />
         <ClinicianView />
         <footer className="border-t border-border/70 px-4 py-3 text-center text-xs text-muted-foreground">
