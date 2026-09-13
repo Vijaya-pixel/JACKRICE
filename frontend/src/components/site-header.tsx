@@ -83,7 +83,7 @@ export function SiteHeader() {
             type="button"
             onClick={signOut}
             disabled={signingOut}
-            className={`machine-power flex shrink-0 items-center gap-1.5 rounded-md border border-machine-ink/25 px-3 py-1.5 text-xs font-semibold text-machine-ink transition-all duration-700 ease-in-out hover:bg-machine-screen/40 ${signingOut ? "scale-50 opacity-0 blur-sm shadow-none" : ""}`}
+            className={`machine-power flex shrink-0 items-center gap-1.5 rounded-md border border-machine-ink/25 px-3 py-1.5 text-xs font-semibold text-machine-ink transition-all duration-700 ease-in-out hover:border-destructive hover:bg-destructive hover:text-destructive-foreground ${signingOut ? "scale-50 opacity-0 blur-sm shadow-none" : ""}`}
           >
             <Power className="size-3.5" aria-hidden="true" />
             <span className="hidden sm:inline">Sign out</span>
