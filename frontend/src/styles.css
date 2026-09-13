@@ -253,15 +253,13 @@
 
 .machine-page {
   position: relative;
-  /* Capped well above typical window widths so the blue bezel is what fills
-     the sides on a normal window instead of a wide band of plain page
-     background before you even reach it — only extreme ultra-wide monitors
-     will still see much side margin. Height cap raised to match, keeping
-     the same ~4:3 aspect ratio rather than just stretching wider. */
-  width: min(calc(100% - 32px), 1600px);
-  height: min(calc(100svh - 32px), 1110px);
+  /* Sits as a device on the page rather than filling the window: ~88% of
+     the viewport in each direction (capped for very large monitors), with a
+     generous margin of page background around it, keeping a ~4:3 aspect. */
+  width: min(calc(100% - 12vw), 1400px);
+  height: min(calc(100svh - 12vh), 980px);
   min-height: 0 !important;
-  margin: 16px auto;
+  margin: 6vh auto;
   overflow: hidden;
   /* Always a flex column so every route's footer is a normal last child
      under the (shrinking, internally-scrolling) display — including /app's,

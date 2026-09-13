@@ -139,8 +139,11 @@ function reduce(current: EngineDiagnostics, event: TacitEngineEvent): EngineDiag
   // Frames/vitals/etc. only ever come from a running engine, so any such
   // event is proof of "running" — needed because the one-off
   // `status: running` at launch can fire before React has subscribed.
-  if (event.type !== "status" && event.type !== "error" && current.status !== "error") {
+  // A frame/vitals/etc. event is proof the engine is alive — including after
+  // an error, since the source auto-restarts the SDK (presageSource.js).
+  if (event.type !== "status" && event.type !== "error") {
     next.status = "running";
+    next.lastError = null;
   }
   switch (event.type) {
     case "status":
@@ -150,7 +153,9 @@ function reduce(current: EngineDiagnostics, event: TacitEngineEvent): EngineDiag
       } else if (event.payload.phase === "running") {
         next.status = "running";
         next.lastError = null;
-      } else if (current.status !== "running") {
+      } else if (current.status !== "running" && current.status !== "error") {
+        // "Presage: restarting…" progress lines must not mask an error;
+        // only real frames (above) or an explicit running phase clear it.
         next.status = "starting";
       }
       break;
