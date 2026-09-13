@@ -17,7 +17,7 @@ const CLINICIAN_NAV = {
 } as const;
 
 const baseLink =
-  "machine-nav-link relative rounded-md px-4 py-2 text-sm font-semibold text-machine-ink/70 transition-[transform,opacity,box-shadow,color] duration-300 ease-out hover:-translate-y-1 hover:scale-[1.03] hover:text-machine-ink hover:shadow-lg active:translate-y-0 active:scale-110 active:opacity-0 after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
+  "machine-nav-link relative rounded-md px-4 py-2 text-sm font-semibold text-machine-ink/70 transition-[transform,opacity,box-shadow,color] duration-300 ease-out hover:-translate-y-1 hover:scale-[1.03] hover:text-machine-ink hover:shadow-lg active:translate-y-0 active:scale-[0.98] active:shadow-md after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
 
 const activeLink = "!text-machine-ink after:!bg-machine-cyan";
 
