@@ -813,6 +813,7 @@ function BlinkCalibrationScreen({
 }) {
   const [blinkCount, setBlinkCount] = useState(calibrationState.detectedBlinkCount);
   const [blinkDetected, setBlinkDetected] = useState(false);
+  const [calibrationAction, setCalibrationAction] = useState<"skip" | "continue" | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -894,6 +895,12 @@ function BlinkCalibrationScreen({
 
   const ready = blinkCount >= 3;
 
+  function completeCalibration(action: "skip" | "continue") {
+    if (calibrationAction || (action === "continue" && !ready)) return;
+    setCalibrationAction(action);
+    window.setTimeout(() => onComplete(blinkCount), 500);
+  }
+
   return (
     <section className="w-full max-w-3xl animate-fade-in text-center" aria-label="Blink Calibration">
       <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
@@ -938,10 +945,27 @@ function BlinkCalibrationScreen({
         <Button size="lg" variant="outline" onClick={retry}>
           Retry
         </Button>
-        <Button size="lg" variant="outline" onClick={() => onComplete(blinkCount)}>
+        <Button
+          size="lg"
+          variant="outline"
+          onClick={() => completeCalibration("skip")}
+          disabled={Boolean(calibrationAction)}
+          className={cn(
+            "transition-[transform,opacity,filter] duration-500 ease-in-out",
+            calibrationAction === "skip" && "scale-50 opacity-0 blur-sm",
+          )}
+        >
           Skip Calibration
         </Button>
-        <Button size="lg" disabled={!ready} onClick={() => onComplete(blinkCount)}>
+        <Button
+          size="lg"
+          disabled={!ready || Boolean(calibrationAction)}
+          onClick={() => completeCalibration("continue")}
+          className={cn(
+            "transition-[transform,opacity,filter] duration-500 ease-in-out",
+            calibrationAction === "continue" && "scale-50 opacity-0 blur-sm",
+          )}
+        >
           Continue
         </Button>
       </div>
