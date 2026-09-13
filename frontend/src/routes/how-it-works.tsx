@@ -11,12 +11,14 @@ export const Route = createFileRoute("/how-it-works")({
       { title: "How it works — TACIT" },
       {
         name: "description",
-        content: "How TACIT turns a single blink into words: calibration, scanning highlights, needs board and spoken messages.",
+        content:
+          "How TACIT turns a single blink into words: calibration, scanning highlights, needs board and spoken messages.",
       },
       { property: "og:title", content: "How it works — TACIT" },
       {
         property: "og:description",
-        content: "How TACIT turns a single blink into words: calibration, scanning highlights, needs board and spoken messages.",
+        content:
+          "How TACIT turns a single blink into words: calibration, scanning highlights, needs board and spoken messages.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -54,26 +56,45 @@ const STEPS = [
 
 // Deliberately irregular landmark cloud for the live detection demo.
 const LANDMARKS: Array<[number, number]> = [
-  [44.2, 37.1], [47.9, 36.2], [51.4, 36.9], // left brow
-  [55.8, 36.0], [59.3, 36.8], [62.1, 38.2], // right brow
-  [45.6, 41.4], [47.8, 40.3], [50.1, 41.6], // left eye
-  [55.3, 40.6], [57.6, 40.1], [59.8, 41.3], // right eye
-  [51.9, 46.7], [51.2, 51.3], [49.6, 54.6], [53.4, 54.2], // nose
-  [48.4, 63.1], [51.8, 62.4], [55.1, 63.4], [51.9, 66.8], // mouth
-  [41.8, 49.9], [63.4, 50.8], // jaw edges
+  [44.2, 37.1],
+  [47.9, 36.2],
+  [51.4, 36.9], // left brow
+  [55.8, 36.0],
+  [59.3, 36.8],
+  [62.1, 38.2], // right brow
+  [45.6, 41.4],
+  [47.8, 40.3],
+  [50.1, 41.6], // left eye
+  [55.3, 40.6],
+  [57.6, 40.1],
+  [59.8, 41.3], // right eye
+  [51.9, 46.7],
+  [51.2, 51.3],
+  [49.6, 54.6],
+  [53.4, 54.2], // nose
+  [48.4, 63.1],
+  [51.8, 62.4],
+  [55.1, 63.4],
+  [51.9, 66.8], // mouth
+  [41.8, 49.9],
+  [63.4, 50.8], // jaw edges
 ];
 
 function HowItWorksPage() {
   return (
-    <main className="min-h-svh bg-background text-foreground">
+    <main className="machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
 
-      <div className="mx-auto max-w-4xl px-6 pb-20 pt-28">
-        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">How it works</p>
-        <h1 className="mt-3 font-display text-4xl font-semibold md:text-5xl">One blink at a time</h1>
+      <div className="machine-display mx-auto max-w-5xl px-6 pb-20 pt-28">
+        <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
+          How it works
+        </p>
+        <h1 className="mt-3 font-display text-4xl font-semibold md:text-5xl">
+          One blink at a time
+        </h1>
         <p className="mt-4 max-w-2xl text-lg leading-relaxed text-muted-foreground">
-          TACIT is built for the person in the bed first. Everything moves at a calm, predictable pace, and a single
-          blink is the only input ever needed.
+          TACIT is built for the person in the bed first. Everything moves at a calm, predictable
+          pace, and a single blink is the only input ever needed.
         </p>
 
         <section className="mt-10" aria-label="Simulated detection preview">
@@ -89,9 +110,9 @@ function HowItWorksPage() {
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           {STEPS.map(({ icon: Icon, title, body, tone }) => (
             <section key={title} className={`rounded-xl border border-border p-6 ${tone}`}>
-              <Icon className="size-6 text-[#162036]" />
-              <h2 className="mt-4 font-display text-xl font-semibold text-[#162036]">{title}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-[#162036]/80">{body}</p>
+              <Icon className="size-6 text-machine-ink" />
+              <h2 className="mt-4 font-display text-xl font-semibold text-machine-ink">{title}</h2>
+              <p className="mt-2 text-sm leading-relaxed text-machine-ink/80">{body}</p>
             </section>
           ))}
         </div>
@@ -159,7 +180,7 @@ function CameraPanel() {
   return (
     <section
       aria-label="Simulated webcam detection preview"
-      className="relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-foreground/40 bg-[#0d1424]"
+      className="machine-monitor relative aspect-[16/10] w-full overflow-hidden rounded-lg border border-foreground/40 bg-machine-display"
     >
       <video
         ref={videoRef}
@@ -168,18 +189,26 @@ function CameraPanel() {
         className={`absolute inset-0 h-full w-full object-cover ${cameraOn ? "opacity-100" : "opacity-0"}`}
         aria-hidden="true"
       />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(255,255,255,0.05),transparent_60%)]" aria-hidden="true" />
-      <div className="absolute inset-0 opacity-[0.15]" aria-hidden="true" style={{
-        backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)',
-        backgroundSize: '48px 48px',
-      }} />
+      <div
+        className="absolute inset-0 bg-[radial-gradient(circle_at_50%_40%,rgba(255,255,255,0.05),transparent_60%)]"
+        aria-hidden="true"
+      />
+      <div
+        className="absolute inset-0 opacity-[0.15]"
+        aria-hidden="true"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+        }}
+      />
 
       {/* Open camera control */}
       <div className="absolute right-3 top-3 z-10 flex flex-col items-end gap-1">
         <button
           type="button"
           onClick={cameraOn ? closeCamera : openCamera}
-          className="inline-flex items-center gap-2 rounded-md border border-signal/60 bg-black/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-signal transition-colors hover:bg-black/70"
+          className="inline-flex items-center gap-2 rounded-md border border-signal/60 bg-machine-ink/70 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-signal transition-colors hover:bg-machine-ink/90"
         >
           {cameraOn ? <CameraOff className="size-3.5" /> : <Camera className="size-3.5" />}
           {cameraOn ? "Close camera" : "Open camera"}
@@ -217,12 +246,21 @@ function CameraPanel() {
           aria-hidden="true"
         />
       ))}
-      <span className="eye-ping pointer-events-none absolute left-[47.8%] top-[40.3%] block h-2 w-2 rounded-full bg-amber" aria-hidden="true" />
+      <span
+        className="eye-ping pointer-events-none absolute left-[47.8%] top-[40.3%] block h-2 w-2 rounded-full bg-amber"
+        aria-hidden="true"
+      />
 
       <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-wide">
-        <span className="rounded-md bg-signal px-2 py-1 text-signal-foreground">Blinks: {blinks}</span>
-        <span className="rounded-md bg-black/40 px-2 py-1 text-white/80">EAR: {ear.toFixed(2)}</span>
-        <span className="rounded-md border-b border-amber bg-black/40 px-2 py-1 text-amber">tracking: good</span>
+        <span className="rounded-md bg-signal px-2 py-1 text-signal-foreground">
+          Blinks: {blinks}
+        </span>
+        <span className="rounded-md bg-machine-ink/70 px-2 py-1 text-machine-glow/80">
+          EAR: {ear.toFixed(2)}
+        </span>
+        <span className="rounded-md border-b border-amber bg-machine-ink/70 px-2 py-1 text-amber">
+          tracking: good
+        </span>
       </div>
     </section>
   );

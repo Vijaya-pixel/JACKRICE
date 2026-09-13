@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
+import { RoleGate } from "@/components/role-gate";
 import { SiteHeader } from "@/components/site-header";
 import { SpeechControls, TextToSpeechProvider } from "@/components/text-to-speech";
 import { Button } from "@/components/ui/button";
@@ -55,9 +56,11 @@ export const Route = createFileRoute("/app")({
 
 function AppRoute() {
   return (
-    <TextToSpeechProvider>
-      <TacitApp />
-    </TextToSpeechProvider>
+    <RoleGate>
+      <TextToSpeechProvider>
+        <TacitApp />
+      </TextToSpeechProvider>
+    </RoleGate>
   );
 }
 
@@ -397,7 +400,7 @@ function TacitApp() {
   }
 
   return (
-    <main className="min-h-svh bg-background text-foreground">
+    <main className="machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
 
       <PatientView
@@ -457,7 +460,7 @@ function PatientView({
   const { currentStage, currentPatient, currentSession, calibrationState, restoring } = workflow;
 
   return (
-    <div className="flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
+    <div className="machine-display flex min-h-svh flex-col px-5 pb-16 pt-24 md:px-10">
       <SpeechControls />
       <div className="flex flex-1 items-center justify-center">
         {currentStage === "PATIENT_SETUP" && (

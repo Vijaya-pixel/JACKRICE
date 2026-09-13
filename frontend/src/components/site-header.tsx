@@ -1,6 +1,7 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Power } from "lucide-react";
 
-import logoAsset from "@/assets/tacit-logo-v3-white.png.asset.json";
+import { clearRole, useRole } from "@/lib/role";
 
 const BASE_NAV = [
   { to: "/", label: "Home", short: "Home" },
@@ -8,27 +9,34 @@ const BASE_NAV = [
   { to: "/app", label: "Patient session", short: "Patient" },
 ] as const;
 
-const CLINICIAN_NAV = { to: "/clinician", label: "Clinician overview", short: "Clinician" } as const;
+const CLINICIAN_NAV = {
+  to: "/clinician",
+  label: "Clinician overview",
+  short: "Clinician",
+} as const;
 
 const baseLink =
-  "relative rounded-md px-4 py-2 text-sm font-semibold text-white/80 transition-colors hover:text-white after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
+  "machine-nav-link relative rounded-md px-4 py-2 text-sm font-semibold text-machine-ink/70 transition-colors hover:text-machine-ink after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
 
-const activeLink = "!text-white after:!bg-white";
+const activeLink = "!text-machine-ink after:!bg-machine-cyan";
 
 export function SiteHeader() {
-  const items = [...BASE_NAV, CLINICIAN_NAV];
+  const navigate = useNavigate();
+  const { role } = useRole();
+  const items = role === "clinician" ? [...BASE_NAV, CLINICIAN_NAV] : BASE_NAV;
+
+  const signOut = () => {
+    clearRole();
+    navigate({ to: "/", replace: true });
+  };
 
   return (
-    <header className="fixed inset-x-0 top-0 z-40 bg-[#16283a]">
-      <div className="mx-auto flex h-16 max-w-[1500px] items-center justify-between gap-4 px-5 md:px-8">
-        <Link to="/" aria-label="TACIT home" className="flex items-center">
-          <img
-            src={logoAsset.url}
-            alt="TACIT"
-            className="h-14 w-auto object-contain"
-            width="111"
-            height="56"
-          />
+    <header className="machine-header fixed inset-x-0 top-0 z-40">
+      <div className="mx-auto flex h-[76px] max-w-[1500px] items-center justify-between gap-4 px-5 md:px-8">
+        <Link to="/" aria-label="TACIT home" className="flex shrink-0 items-center">
+          <span className="font-logo text-3xl font-bold tracking-tight text-machine-ink">
+            TACIT
+          </span>
         </Link>
 
         <nav
@@ -53,16 +61,41 @@ export function SiteHeader() {
             <Link
               key={item.to}
               to={item.to}
-              className="rounded-md px-2 py-1.5 text-xs font-semibold text-white/80"
+              className="rounded-md px-2 py-1.5 text-xs font-semibold text-machine-ink/75"
               activeOptions={{ exact: item.to === "/" }}
-              activeProps={{ className: "!text-white underline underline-offset-4" }}
+              activeProps={{
+                className: "!text-machine-ink underline decoration-machine-cyan underline-offset-4",
+              }}
             >
               {item.short}
             </Link>
           ))}
         </nav>
 
-        <span className="hidden w-16 md:block" aria-hidden="true" />
+        {role === "clinician" ? (
+          <button
+            type="button"
+            onClick={signOut}
+            className="machine-power flex shrink-0 items-center gap-1.5 rounded-md border border-machine-ink/25 px-3 py-1.5 text-xs font-semibold text-machine-ink transition-colors hover:bg-machine-screen/40"
+          >
+            <Power className="size-3.5" aria-hidden="true" />
+            <span className="hidden sm:inline">Sign out</span>
+          </button>
+        ) : (
+          <span className="hidden w-16 md:block" aria-hidden="true" />
+        )}
+      </div>
+      <div className="machine-sensors" aria-hidden="true">
+        <span className="machine-lens" />
+        <span className="machine-led machine-led-ready" />
+        <span className="machine-led machine-led-warn" />
+        <span className="machine-status">SYSTEM ACTIVE · SIGNAL READY</span>
+      </div>
+      <div className="machine-vents" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
       </div>
     </header>
   );

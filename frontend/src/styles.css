@@ -20,8 +20,12 @@
 
 @theme inline {
   --font-sans: "Atkinson Hyperlegible", sans-serif;
-  --font-display: "Fredoka", "Atkinson Hyperlegible", sans-serif;
+  --font-display: "Playfair Display", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* Just for the TACIT wordmark — the machine redesign's Playfair Display
+     (font-display) is reserved for headline copy; the logo itself stays the
+     bold rounded sans it always was. */
+  --font-logo: "Fredoka", "Atkinson Hyperlegible", sans-serif;
   --color-signal: var(--signal);
   --color-signal-foreground: var(--signal-foreground);
   --color-cta: var(--cta);
@@ -76,6 +80,14 @@
   --color-pastel-mint: var(--pastel-mint);
   --color-pastel-blush: var(--pastel-blush);
   --color-pastel-blue: var(--pastel-blue);
+  --color-machine-shell: var(--machine-shell);
+  --color-machine-shell-dark: var(--machine-shell-dark);
+  --color-machine-rim: var(--machine-rim);
+  --color-machine-screen: var(--machine-screen);
+  --color-machine-display: var(--machine-display);
+  --color-machine-ink: var(--machine-ink);
+  --color-machine-cyan: var(--machine-cyan);
+  --color-machine-glow: var(--machine-glow);
 }
 
 :root {
@@ -126,6 +138,14 @@
   --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
   --sidebar-border: oklch(0.80 0.035 220 / 20%);
   --sidebar-ring: oklch(0.704 0.04 256.788);
+  --machine-shell: oklch(0.58 0.145 247);
+  --machine-shell-dark: oklch(0.38 0.12 248);
+  --machine-rim: oklch(0.25 0.085 247);
+  --machine-screen: oklch(0.91 0.035 224);
+  --machine-display: oklch(0.18 0.045 245);
+  --machine-ink: oklch(0.19 0.055 250);
+  --machine-cyan: oklch(0.78 0.12 210);
+  --machine-glow: oklch(0.94 0.025 220);
 }
 
 .dark {
@@ -161,6 +181,14 @@
   --sidebar-accent-foreground: oklch(0.94 0.02 220);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.75 0.06 220);
+  --machine-shell: oklch(0.52 0.13 247);
+  --machine-shell-dark: oklch(0.32 0.10 248);
+  --machine-rim: oklch(0.20 0.065 247);
+  --machine-screen: oklch(0.25 0.045 225);
+  --machine-display: oklch(0.14 0.035 245);
+  --machine-ink: oklch(0.92 0.02 220);
+  --machine-cyan: oklch(0.80 0.115 210);
+  --machine-glow: oklch(0.94 0.025 220);
 }
 
 @layer base {
@@ -177,6 +205,139 @@
 
   button { cursor: pointer; }
 }
+
+.machine-page {
+  position: relative;
+  /* Capped well above typical window widths so the blue bezel is what fills
+     the sides on a normal window instead of a wide band of plain page
+     background before you even reach it — only extreme ultra-wide monitors
+     will still see much side margin. Height cap raised to match, keeping
+     the same ~4:3 aspect ratio rather than just stretching wider. */
+  width: min(calc(100% - 32px), 1600px);
+  height: min(calc(100svh - 32px), 1110px);
+  min-height: 0 !important;
+  margin: 16px auto;
+  overflow: hidden;
+  /* Blue on the outside, a single thin navy line on the inside edge next to
+     the content — not a navy hairline on the outside too. Same on all four
+     sides; .machine-header/the fixed footer (opaque, same --machine-shell
+     blue) simply sit on top of this band at the top/bottom edges. */
+  border: 14px solid var(--machine-shell);
+  border-radius: 30px;
+  background: var(--background);
+  box-shadow:
+    inset 0 0 0 4px var(--machine-rim),
+    0 10px 24px color-mix(in oklch, var(--machine-rim) 28%, transparent);
+}
+
+.machine-page::after {
+  content: "";
+  position: absolute;
+  z-index: 35;
+  background: var(--machine-display);
+}
+/* Camera dot: lives on the header itself (not .machine-page) now that the
+   header is full-bleed and opaque all the way to the top — as a sibling
+   pseudo-element it would just get painted over. As ::before on the header,
+   it shares the header's own stacking context and paints after (on top of)
+   the header's own background, guaranteed, without needing to reason about
+   two different elements' z-index values at all. */
+.machine-header::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 7px;
+  width: 11px;
+  height: 11px;
+  transform: translateX(-50%);
+  border-radius: 999px;
+  /* Radial gradient (near-black lens with a faint glassy highlight) instead
+     of a flat circle so it actually reads as a camera lens rather than a
+     dot — black, like a real front camera, not tinted to the accent color. */
+  background: radial-gradient(
+    circle at 35% 35%,
+    color-mix(in oklch, white 12%, black) 0%,
+    black 55%,
+    black 100%
+  );
+  box-shadow: inset 0 0 0 1.5px color-mix(in oklch, white 20%, black);
+}
+.machine-page::after {
+  right: -3px;
+  top: 106px;
+  width: 3px;
+  height: 42px;
+  border-radius: 0 3px 3px 0;
+}
+
+.machine-header {
+  /* !important: the header's own className also carries Tailwind's `fixed`
+     utility (kept for the non-machine, Electron-only render path in
+     RoleGate's early-return); guarantee this wins so the header docks to
+     .machine-page's edges instead of the real browser viewport's. */
+  position: absolute !important;
+  /* Full-bleed and squared at the bottom, on purpose: an inset "pill" header
+     with rounded corners sitting over a sibling that starts at the same y
+     position is one pixel-rounding error away from revealing a sliver of
+     .machine-page's background underneath — that was the "white line" bug.
+     Flush + square makes that class of gap structurally impossible instead
+     of tuning it away. */
+  left: 0;
+  right: 0;
+  top: 0;
+  background: var(--machine-shell);
+  border: 0;
+  border-bottom: 2px solid var(--machine-shell-dark);
+  border-radius: 24px 24px 0 0;
+}
+.machine-logo { filter: brightness(0) saturate(100%) invert(11%) sepia(15%) saturate(1970%) hue-rotate(174deg) brightness(96%); }
+/* Single flex row for the LEDs + status text — they used to be two
+   independently absolute-positioned elements with different `bottom`
+   offsets (a manual guess at alignment) and the status text had no
+   `white-space: nowrap`, so once it held a full sentence instead of nothing
+   it wrapped onto multiple lines and grew upward into the logo. One flex
+   container with `align-items: center` makes perfect vertical alignment the
+   default instead of something to tune by hand. */
+.machine-sensors { position: absolute; left: 16px; bottom: 9px; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.machine-lens { display: none; }
+.machine-led { width: 11px; height: 11px; border-radius: 999px; border: 1px solid var(--machine-rim); }
+.machine-led-ready { background: var(--machine-cyan); box-shadow: 0 0 7px color-mix(in oklch, var(--machine-cyan) 65%, transparent); }
+.machine-led-warn { background: var(--amber); }
+.machine-vents { display: none; }
+.machine-status { font-family: var(--font-mono); font-size: 9px; color: var(--machine-rim); letter-spacing: 0; white-space: nowrap; }
+/* `overflow-y: auto` alone does nothing here: with height left at `auto` (or
+   forced to `min-h-svh`, i.e. the REAL browser viewport height, by the
+   routes' own Tailwind classes) this box always just grows to fit its
+   content — there's never anything to "overflow" against. `height: 100%`
+   pins it to .machine-page's own definite height (height: min(...) below),
+   which is what actually turns "overflow-y: auto" into a working internal
+   scrollbar instead of a no-op; min-height: 0 lets it be READ that small
+   too, in a flex-column route (overriding the automatic min-content-size
+   floor flex items get by default). Full-bleed (no side/left/right inset,
+   square top corners) to sit flush under the now full-bleed .machine-header
+   with zero seam between them. */
+.machine-display { position: relative; height: 100%; min-height: 0 !important; width: 100% !important; max-width: none !important; margin-inline: 0 !important; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--machine-screen); border: 0; border-radius: 0; box-shadow: inset 0 0 24px color-mix(in oklch, var(--machine-rim) 10%, transparent); }
+.machine-monitor { box-shadow: inset 0 0 20px color-mix(in oklch, var(--machine-cyan) 12%, transparent); }
+.machine-module { box-shadow: inset 0 0 0 2px color-mix(in oklch, var(--machine-glow) 30%, transparent), 5px 6px 0 color-mix(in oklch, var(--machine-rim) 14%, transparent); }
+.machine-footer { background: var(--machine-shell); border-color: var(--machine-shell-dark); color: var(--machine-ink); }
+.machine-page > footer { background: var(--machine-shell); border-color: var(--machine-shell-dark); color: var(--machine-ink); }
+.machine-page > footer::before { content: ""; display: block; width: 88px; height: 5px; margin: -2px auto 5px; border-radius: 999px; background: var(--machine-rim); opacity: .65; }
+/* app.tsx's footer carries Tailwind's `fixed` utility (meant to stay
+   pinned while /app's content scrolls) — same trap the header had: `fixed`
+   pins it to the REAL browser viewport bottom, not to .machine-page, so on
+   a window taller than the chassis it renders below the visible frame
+   entirely (this was the missing bottom band). Reusing `fixed` as the
+   selector hook here targets exactly that footer without touching the
+   other routes' plain, correctly-static footers. */
+.machine-page > footer.fixed {
+  position: absolute !important;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 0 0 22px 22px;
+}
+
+body { background: color-mix(in oklch, var(--machine-screen) 70%, var(--machine-rim)); }
 
 @keyframes calibration-fill {
   from { background: conic-gradient(var(--primary) 0deg, var(--muted) 0deg); }
@@ -242,4 +403,13 @@
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
+
+@media (max-width: 767px) {
+  .machine-page { width: calc(100% - 12px); height: calc(100svh - 12px); margin: 6px auto; border-radius: 22px; border-width: 8px; }
+  .machine-header { border-radius: 18px 18px 0 0; }
+  .machine-page::after, .machine-sensors, .machine-vents, .machine-status { display: none; }
+  .machine-header nav { gap: 0; }
+  .machine-header nav a { padding-inline: 6px; font-size: 10px; }
+  .machine-power { width: 34px; height: 34px; justify-content: center; padding: 0; }
 }
