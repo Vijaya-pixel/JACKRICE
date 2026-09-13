@@ -32,7 +32,14 @@ type Stage = "intro" | "checking" | "done";
 function VerifyPage() {
   const navigate = useNavigate();
   const [stage, setStage] = useState<Stage>("intro");
+  const [startingVerification, setStartingVerification] = useState(false);
   const timerRef = useRef<number | null>(null);
+
+  function beginVerification() {
+    if (startingVerification) return;
+    setStartingVerification(true);
+    window.setTimeout(() => setStage("checking"), 100);
+  }
 
   useEffect(() => {
     if (stage === "checking") {
@@ -99,8 +106,9 @@ function VerifyPage() {
 
                 <button
                   type="button"
-                  onClick={() => setStage("checking")}
-                  className="mt-6 w-full rounded-lg bg-signal px-5 py-3 text-sm font-semibold uppercase tracking-widest text-signal-foreground transition-colors hover:bg-signal/85"
+                  onClick={beginVerification}
+                  disabled={startingVerification}
+                  className={`mt-6 w-full rounded-lg bg-signal px-5 py-3 text-sm font-semibold uppercase tracking-widest text-signal-foreground transition-[transform,opacity,filter] duration-100 ease-out hover:bg-signal/85 ${startingVerification ? "scale-125 opacity-0 blur-md" : ""}`}
                 >
                   Begin verification
                 </button>
