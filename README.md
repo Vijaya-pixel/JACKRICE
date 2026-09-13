@@ -1,4 +1,4 @@
-# Tacit - Eye-Driven Communication App
+# Tacit - Eye Driven Communication App
 
 A comprehensive assistive communication app that helps non-verbal or mobility-limited patients communicate using blink detection, gaze tracking, AI-assisted suggestions, and text-to-speech.
 
