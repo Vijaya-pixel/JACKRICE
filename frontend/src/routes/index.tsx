@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 
 import { SiteHeader } from "@/components/site-header";
 
@@ -26,6 +27,13 @@ export const Route = createFileRoute("/")({
 
 function HomePage() {
   const navigate = Route.useNavigate();
+  const [launching, setLaunching] = useState<"/app" | "/how-it-works" | null>(null);
+
+  function launchPage(destination: "/app" | "/how-it-works") {
+    if (launching) return;
+    setLaunching(destination);
+    window.setTimeout(() => void navigate({ to: destination }), 300);
+  }
 
   return (
     <main className="machine-page flex min-h-svh flex-col bg-background pt-[76px]">
@@ -48,16 +56,18 @@ function HomePage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <button
               type="button"
-              onClick={() => void navigate({ to: "/app" })}
-              className="inline-flex animate-in fade-in slide-in-from-left-8 fill-mode-both items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground duration-700 ease-out"
+              onClick={() => launchPage("/app")}
+              disabled={Boolean(launching)}
+              className={`inline-flex animate-in fade-in slide-in-from-left-8 fill-mode-both items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground duration-700 ease-out transition-[transform,opacity,filter] ${launching === "/app" ? "scale-125 opacity-0 blur-md" : ""}`}
             >
               Try the Prototype
               <span aria-hidden="true">→</span>
             </button>
             <button
               type="button"
-              onClick={() => void navigate({ to: "/how-it-works" })}
-              className="inline-flex animate-in fade-in slide-in-from-right-8 fill-mode-both items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 bg-transparent px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground duration-700 ease-out hover:bg-foreground hover:text-background"
+              onClick={() => launchPage("/how-it-works")}
+              disabled={Boolean(launching)}
+              className={`inline-flex animate-in fade-in slide-in-from-right-8 fill-mode-both items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 bg-transparent px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground duration-700 ease-out transition-[transform,opacity,filter] hover:bg-foreground hover:text-background ${launching === "/how-it-works" ? "scale-125 opacity-0 blur-md" : ""}`}
             >
               Watch Demo
               <span aria-hidden="true">▶</span>
