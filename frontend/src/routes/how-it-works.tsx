@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Camera, CameraOff, Eye, Grid3x3, Keyboard, Volume2 } from "lucide-react";
 
+import { RevealOnView } from "@/components/reveal-on-view";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 
@@ -85,7 +86,7 @@ function HowItWorksPage() {
     <main className="machine-page min-h-svh bg-background text-foreground">
       <SiteHeader />
 
-      <div className="machine-display mx-auto max-w-5xl px-6 pb-20 pt-10">
+      <div className="page-copy-reveal machine-display mx-auto max-w-5xl px-6 pb-20 pt-10">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
           How it works
         </p>
@@ -102,18 +103,22 @@ function HowItWorksPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             A mock view of the landmark tracking and signal readout used during calibration.
           </p>
-          <div className="mt-4">
+          <div className="mt-4 origin-center transform-gpu animate-in fade-in zoom-in-50 duration-1000 motion-reduce:animate-none">
             <CameraPanel />
           </div>
         </section>
 
         <div className="mt-10 grid gap-4 sm:grid-cols-2">
           {STEPS.map(({ icon: Icon, title, body, tone }) => (
-            <section key={title} className={`rounded-xl border border-border p-6 ${tone}`}>
-              <Icon className="size-6 text-machine-ink" />
-              <h2 className="mt-4 font-display text-xl font-semibold text-machine-ink">{title}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-machine-ink/80">{body}</p>
-            </section>
+            <RevealOnView key={title}>
+              <section className={`rounded-xl border border-border p-6 ${tone}`}>
+                <Icon className="size-6 text-machine-ink" />
+                <h2 className="mt-4 font-display text-xl font-semibold text-machine-ink">
+                  {title}
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-machine-ink/80">{body}</p>
+              </section>
+            </RevealOnView>
           ))}
         </div>
 

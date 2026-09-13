@@ -206,6 +206,55 @@
   button { cursor: pointer; }
 }
 
+/* --- Page transitions (ported from the `animations` branch) ---------------
+   Add `page-copy-reveal` to a page's content root and its headings/paragraphs
+   fade+rise in with a small stagger on mount — the "page transition" for
+   every route. Reduced-motion users get the content immediately. */
+@keyframes copy-reveal {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-copy-reveal h1,
+.page-copy-reveal h2,
+.page-copy-reveal h3,
+.page-copy-reveal p {
+  animation: copy-reveal 0.7s ease-out both;
+}
+.page-copy-reveal h1 { animation-delay: 100ms; }
+.page-copy-reveal h2 { animation-delay: 160ms; }
+.page-copy-reveal h3 { animation-delay: 220ms; }
+.page-copy-reveal p { animation-delay: 280ms; }
+
+/* Whole-screen enter transition for a workflow stage / route body: a soft
+   fade + rise + settle. Re-runs whenever the element remounts (the app keys
+   its stage wrapper by stage, so each step of the session gets one). */
+@keyframes stage-enter {
+  from { opacity: 0; transform: translateY(0.5rem) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.stage-enter { animation: stage-enter 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* "Waiting for blink" indicator on the calibration screen: three dots that
+   bounce, morph into a spinner, and back. */
+@keyframes calibration-loader-morph {
+  0%, 40%, 100% { width: 0.5rem; height: 0.5rem; border: 0 solid transparent; border-radius: 999px; background: var(--primary); box-shadow: -0.55rem 0 0 var(--primary), 0.55rem 0 0 var(--primary); transform: scale(1); }
+  10% { box-shadow: -0.55rem -0.25rem 0 var(--primary), 0 -0.5rem 0 var(--primary), 0.55rem -0.15rem 0 var(--primary); }
+  20% { box-shadow: -0.55rem -0.1rem 0 var(--primary), 0 -0.25rem 0 var(--primary), 0.55rem -0.5rem 0 var(--primary); }
+  30% { box-shadow: -0.55rem -0.45rem 0 var(--primary), 0 -0.1rem 0 var(--primary), 0.55rem -0.25rem 0 var(--primary); }
+  48% { width: 1.25rem; height: 1.25rem; border: 4px solid color-mix(in oklch, var(--primary) 30%, transparent); border-top-color: var(--primary); border-radius: 999px; background: transparent; box-shadow: none; transform: rotate(0deg) scale(1.05); }
+  84% { width: 1.25rem; height: 1.25rem; border: 4px solid color-mix(in oklch, var(--primary) 30%, transparent); border-top-color: var(--primary); border-radius: 999px; background: transparent; box-shadow: none; transform: rotate(360deg) scale(1.05); }
+}
+.calibration-loader { display: inline-block; animation: calibration-loader-morph 2.6s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-copy-reveal h1,
+  .page-copy-reveal h2,
+  .page-copy-reveal h3,
+  .page-copy-reveal p,
+  .stage-enter,
+  .calibration-loader { animation: none; }
+}
+
 .machine-page {
   position: relative;
   /* Capped well above typical window widths so the blue bezel is what fills

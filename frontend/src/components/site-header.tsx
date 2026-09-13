@@ -48,7 +48,12 @@ function useEngineIndicator(): EngineIndicator {
   }
   if (engine.status === "error") {
     const detail = (engine.lastError ?? "").replace(/\s+/g, " ").trim().slice(0, 40).toUpperCase();
-    return { ready: false, warn: true, fault: true, text: `ENGINE ERROR${detail ? ` · ${detail}` : ""}` };
+    return {
+      ready: false,
+      warn: true,
+      fault: true,
+      text: `ENGINE ERROR${detail ? ` · ${detail}` : ""}`,
+    };
   }
   if (!engine.available || engine.status !== "running") {
     return { ready: false, warn: false, fault: false, text: "ENGINE STARTING" };
@@ -79,7 +84,7 @@ const CLINICIAN_NAV = {
 } as const;
 
 const baseLink =
-  "machine-nav-link relative rounded-md px-4 py-2 text-sm font-semibold text-machine-ink/70 transition-colors hover:text-machine-ink after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
+  "machine-nav-link relative rounded-md px-4 py-2 text-sm font-semibold text-machine-ink/70 transition-[transform,color] duration-300 ease-out hover:-translate-y-0.5 hover:text-machine-ink motion-reduce:transform-none after:absolute after:inset-x-3 after:-bottom-0.5 after:h-0.5 after:rounded-full after:bg-transparent after:transition-colors";
 
 const activeLink = "!text-machine-ink after:!bg-machine-cyan";
 
@@ -89,9 +94,16 @@ export function SiteHeader() {
   const items = role === "clinician" ? [...BASE_NAV, CLINICIAN_NAV] : BASE_NAV;
   const indicator = useEngineIndicator();
 
+  const [signingOut, setSigningOut] = useState(false);
+
+  // Let the button shrink/fade out before the route actually changes.
   const signOut = () => {
-    clearRole();
-    navigate({ to: "/", replace: true });
+    if (signingOut) return;
+    setSigningOut(true);
+    window.setTimeout(() => {
+      clearRole();
+      navigate({ to: "/", replace: true });
+    }, 500);
   };
 
   return (
@@ -140,7 +152,11 @@ export function SiteHeader() {
           <button
             type="button"
             onClick={signOut}
-            className="machine-power flex shrink-0 items-center gap-1.5 rounded-md border border-machine-ink/25 px-3 py-1.5 text-xs font-semibold text-machine-ink transition-colors hover:bg-machine-screen/40"
+            disabled={signingOut}
+            className={cn(
+              "machine-power flex shrink-0 items-center gap-1.5 rounded-md border border-machine-ink/25 px-3 py-1.5 text-xs font-semibold text-machine-ink transition-all duration-500 ease-in-out hover:border-destructive hover:bg-destructive hover:text-destructive-foreground",
+              signingOut && "scale-50 opacity-0 blur-sm",
+            )}
           >
             <Power className="size-3.5" aria-hidden="true" />
             <span className="hidden sm:inline">Sign out</span>
@@ -149,7 +165,12 @@ export function SiteHeader() {
           <span className="hidden w-16 md:block" aria-hidden="true" />
         )}
       </div>
-      <div className="machine-sensors" role="status" aria-live="polite" aria-label={`Engine status: ${indicator.text}`}>
+      <div
+        className="machine-sensors"
+        role="status"
+        aria-live="polite"
+        aria-label={`Engine status: ${indicator.text}`}
+      >
         <span className="machine-status">{indicator.text}</span>
         <span
           className={cn("machine-led machine-led-ready", indicator.ready && "is-on")}

@@ -54,7 +54,7 @@ function VerifyPage() {
       <div className="machine-display mx-auto flex w-full max-w-[1500px] flex-1 items-center justify-center px-5 py-10 md:px-8">
         <section
           aria-label="Clinician verification"
-          className="machine-module w-full max-w-md rounded-xl border-2 border-border bg-card"
+          className="machine-module w-full max-w-md origin-center transform-gpu animate-in fade-in zoom-in-50 duration-1000 rounded-xl border-2 border-border bg-card motion-reduce:animate-none"
         >
           {/* Persona-style card header */}
           <div className="flex items-center justify-between border-b border-border px-6 py-4">

@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useElevenLabsTTS } from "@/hooks/useElevenLabsTTS";
 import { TextToSpeechContext, useTextToSpeech } from "@/hooks/useTextToSpeech";
+import { cn } from "@/lib/utils";
 
 const TTS_ENABLED_KEY = "tacit:ttsEnabled";
 
@@ -53,10 +54,86 @@ export function TextToSpeechProvider({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Icon-only voice toggle for the side rail. One click flips text-to-speech
+ * on/off; the full status ("unavailable on this device", etc.) lives in the
+ * tooltip/aria-label instead of taking up space. Shows a stop button
+ * underneath only while something is being read aloud.
+ */
+export function SpeechToggleButton({ className }: { className?: string }) {
+  const { enabled, setEnabled, available, isReady, isSpeaking, error, stopAudio } =
+    useTextToSpeech();
+  const active = enabled && available;
+  const statusText = !isReady
+    ? "Loading voice..."
+    : !available
+      ? "Voice playback is unavailable on this device."
+      : error
+        ? "Speech could not play. Please try again."
+        : active
+          ? "Voice on — selected answers are read aloud. Click to turn off."
+          : "Voice off. Click to turn on.";
+
+  return (
+    <div
+      className={cn("flex flex-col items-center gap-2", className)}
+      onKeyDown={(event) => {
+        // Space should operate the focused voice control, not select a patient answer.
+        if (event.code === "Space") event.stopPropagation();
+      }}
+    >
+      <button
+        type="button"
+        role="switch"
+        aria-checked={active}
+        aria-label={`Text-to-speech: ${statusText}`}
+        title={statusText}
+        disabled={!isReady || !available}
+        onClick={() => setEnabled(!active)}
+        className={cn(
+          "grid size-11 place-items-center rounded-lg border shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
+          active
+            ? "border-primary bg-primary text-primary-foreground hover:bg-primary/90"
+            : "border-border bg-card text-muted-foreground hover:bg-background",
+        )}
+      >
+        {active ? (
+          <Volume2 className="size-5" aria-hidden="true" />
+        ) : (
+          <VolumeX className="size-5" aria-hidden="true" />
+        )}
+      </button>
+      {isSpeaking && (
+        <button
+          type="button"
+          onClick={stopAudio}
+          aria-label="Stop speaking"
+          title="Stop speaking"
+          className="grid size-11 place-items-center rounded-lg border border-border bg-card text-foreground shadow-sm transition-colors hover:bg-background"
+        >
+          <Square className="size-4" aria-hidden="true" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Voice on/off toggle as a right-aligned bar above the content (used on the
+ *  pre-calibration screens, which have no side rail). */
 export function SpeechControls() {
   const { enabled, setEnabled, available, isReady, isSpeaking, error, stopAudio } =
     useTextToSpeech();
   const active = enabled && available;
+
+  const statusText = !isReady
+    ? "Loading voice..."
+    : !available
+      ? "Voice playback is unavailable on this device."
+      : error
+        ? "Speech could not play. Please try again."
+        : active
+          ? "Selected answers are read aloud."
+          : "Voice playback is off.";
 
   return (
     <div
@@ -91,15 +168,7 @@ export function SpeechControls() {
         </Button>
       )}
       <p role="status" className="w-full text-right text-xs text-muted-foreground">
-        {!isReady
-          ? "Loading voice..."
-          : !available
-            ? "Voice playback is unavailable on this device."
-            : error
-              ? "Speech could not play. Please try again."
-              : active
-                ? "Selected answers are read aloud."
-                : "Voice playback is off."}
+        {statusText}
       </p>
     </div>
   );

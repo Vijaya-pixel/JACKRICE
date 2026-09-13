@@ -15,9 +15,10 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 
+import { LiveVitalsButton } from "@/components/live-vitals";
 import { RoleGate } from "@/components/role-gate";
 import { SiteHeader } from "@/components/site-header";
-import { SpeechControls, TextToSpeechProvider } from "@/components/text-to-speech";
+import { SpeechToggleButton, TextToSpeechProvider } from "@/components/text-to-speech";
 import { Button } from "@/components/ui/button";
 import { suppressBlinkInputFor, useBlinkInput } from "@/hooks/useBlinkInput";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
@@ -66,11 +67,7 @@ function AppRoute() {
 }
 
 type WorkflowStage =
-  | "PATIENT_SETUP"
-  | "CLINICAL_CONTEXT"
-  | "CALIBRATION"
-  | "COMMUNICATION"
-  | "SESSION_SUMMARY";
+  "PATIENT_SETUP" | "CLINICAL_CONTEXT" | "CALIBRATION" | "COMMUNICATION" | "SESSION_SUMMARY";
 
 type CalibrationState = {
   calibrationCompleted: boolean;
@@ -372,7 +369,13 @@ function TacitApp() {
   function selectPatient(patient: Patient) {
     window.sessionStorage.setItem(ACTIVE_PATIENT_KEY, patient.id);
     window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
-    setQuestionSuggestionState({ questions: [], loading: false, error: null, source: null, model: null });
+    setQuestionSuggestionState({
+      questions: [],
+      loading: false,
+      error: null,
+      source: null,
+      model: null,
+    });
     dispatchWorkflow({ type: "SELECT_PATIENT", patient });
   }
 
@@ -403,7 +406,13 @@ function TacitApp() {
     window.sessionStorage.removeItem(ACTIVE_SESSION_KEY);
     setMessage("");
     setSpokenMessage("");
-    setQuestionSuggestionState({ questions: [], loading: false, error: null, source: null, model: null });
+    setQuestionSuggestionState({
+      questions: [],
+      loading: false,
+      error: null,
+      source: null,
+      model: null,
+    });
     dispatchWorkflow({ type: "RESET_WORKFLOW" });
   }
 
@@ -466,50 +475,65 @@ function PatientView({
   onRefreshQuestionSuggestions: (patient: Patient, session: Session) => Promise<void>;
 }) {
   const { currentStage, currentPatient, currentSession, calibrationState, restoring } = workflow;
+  // Live vitals ride along on every screen once blink calibration is done —
+  // the camera is running from here on, so the numbers are always current.
+  const showLiveVitals =
+    (currentStage === "COMMUNICATION" || currentStage === "SESSION_SUMMARY") &&
+    Boolean(currentPatient && currentSession);
 
   return (
-    <div className="machine-display flex min-h-svh flex-col px-5 pb-16 pt-5 md:px-10">
-      <SpeechControls />
-      <div className="flex flex-1 items-center justify-center">
-        {currentStage === "PATIENT_SETUP" && (
-          <PatientIdentification
-            restoring={restoring}
-            onIdentified={onPatientIdentified}
-          />
-        )}
-        {currentStage === "CLINICAL_CONTEXT" && currentPatient && (
-          <PatientContextScreen
-            patient={currentPatient}
-            onSessionStarted={onSessionStarted}
-          />
-        )}
-        {currentStage === "CALIBRATION" && currentPatient && currentSession && (
-          <BlinkCalibrationScreen
-            patient={currentPatient}
-            session={currentSession}
-            calibrationState={calibrationState}
-            onComplete={onCalibrationComplete}
-            onRetry={onCalibrationRetry}
-          />
-        )}
-        {currentStage === "COMMUNICATION" && currentPatient && currentSession && (
-          <CommunicationStageScreen
-            patient={currentPatient}
-            session={currentSession}
-            onContinue={onGoToSessionSummary}
-            onMessage={setSpokenMessage}
-            questionSuggestions={questionSuggestions}
-            onRefreshQuestionSuggestions={onRefreshQuestionSuggestions}
-          />
-        )}
-        {currentStage === "SESSION_SUMMARY" && currentPatient && currentSession && (
-          <SessionSummaryScreen
-            patient={currentPatient}
-            session={currentSession}
-            spokenMessage={spokenMessage}
-            onStartAnotherPatient={onStartNewWorkflow}
-          />
-        )}
+    <div className="machine-display flex min-h-svh flex-col overflow-hidden px-5 pb-4 pt-3 md:px-8">
+      {/* Content on the left; a narrow right rail with the voice toggle and
+          live vitals on the post-calibration screens. The content column is
+          the ONLY thing allowed to scroll (and only if a screen genuinely
+          can't fit — the boards size themselves to the available height so
+          they never do). Content is top-anchored so every stage's eyebrow +
+          title land at the same height — no vertical jump between stages. */}
+      <div className="flex min-h-0 flex-1 items-stretch gap-4">
+        <div
+          key={currentStage}
+          className="page-copy-reveal stage-enter flex min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto pt-1"
+        >
+          {currentStage === "PATIENT_SETUP" && (
+            <PatientIdentification restoring={restoring} onIdentified={onPatientIdentified} />
+          )}
+          {currentStage === "CLINICAL_CONTEXT" && currentPatient && (
+            <PatientContextScreen patient={currentPatient} onSessionStarted={onSessionStarted} />
+          )}
+          {currentStage === "CALIBRATION" && currentPatient && currentSession && (
+            <BlinkCalibrationScreen
+              patient={currentPatient}
+              session={currentSession}
+              calibrationState={calibrationState}
+              onComplete={onCalibrationComplete}
+              onRetry={onCalibrationRetry}
+            />
+          )}
+          {currentStage === "COMMUNICATION" && currentPatient && currentSession && (
+            <CommunicationStageScreen
+              patient={currentPatient}
+              session={currentSession}
+              onContinue={onGoToSessionSummary}
+              onMessage={setSpokenMessage}
+              questionSuggestions={questionSuggestions}
+              onRefreshQuestionSuggestions={onRefreshQuestionSuggestions}
+            />
+          )}
+          {currentStage === "SESSION_SUMMARY" && currentPatient && currentSession && (
+            <SessionSummaryScreen
+              patient={currentPatient}
+              session={currentSession}
+              spokenMessage={spokenMessage}
+              onStartAnotherPatient={onStartNewWorkflow}
+            />
+          )}
+        </div>
+        {/* Same rail on every stage so the content column never shifts:
+            voice toggle always; vitals only once the camera is tracking. */}
+        <div className="flex shrink-0 flex-col gap-2 self-start pt-1">
+          <SpeechToggleButton />
+          {showLiveVitals && <LiveVitalsButton />}
+        </div>
       </div>
     </div>
   );
@@ -552,7 +576,8 @@ function PatientIdentification({
     try {
       const existing = await localDb.getPatientByPatientId(trimmedPatientId);
       const patient =
-        existing ?? (await localDb.createPatient({ name: trimmedName, patientId: trimmedPatientId }));
+        existing ??
+        (await localDb.createPatient({ name: trimmedName, patientId: trimmedPatientId }));
 
       if (!patient) {
         setError("Could not save this patient. Please try again.");
@@ -577,7 +602,8 @@ function PatientIdentification({
       <div className="rounded-lg border border-border bg-card p-6 shadow-sm md:p-8">
         <h1 className="font-display text-3xl font-semibold md:text-4xl">Start patient session</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Enter the patient details once. TACIT will reuse an existing local record when the patient ID already exists.
+          Enter the patient details once. TACIT will reuse an existing local record when the patient
+          ID already exists.
         </p>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
@@ -605,8 +631,16 @@ function PatientIdentification({
             />
           </label>
 
-          {error && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-          {status && <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">{status}</p>}
+          {error && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {status && (
+            <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">
+              {status}
+            </p>
+          )}
 
           <Button type="submit" size="lg" className="w-full" disabled={submitting || restoring}>
             {restoring ? "Loading patient..." : submitting ? "Checking..." : "Continue"}
@@ -715,7 +749,8 @@ function PatientContextScreen({
               Add clinical context
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Optional notes for {patient.name} ({patient.patientId}). This stays local and can be edited before the session begins.
+              Optional notes for {patient.name} ({patient.patientId}). This stays local and can be
+              edited before the session begins.
             </p>
           </div>
         </div>
@@ -782,8 +817,16 @@ function PatientContextScreen({
             />
           </label>
 
-          {error && <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-          {status && <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">{status}</p>}
+          {error && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {status && (
+            <p className="rounded-md border border-success/30 bg-success/10 px-3 py-2 text-sm font-medium text-success">
+              {status}
+            </p>
+          )}
 
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button
@@ -863,7 +906,8 @@ function BlinkCalibrationScreen({
           await videoRef.current.play();
         }
       } catch {
-        if (!cancelled) setCameraError("Camera preview unavailable. Spacebar still simulates a blink.");
+        if (!cancelled)
+          setCameraError("Camera preview unavailable. Spacebar still simulates a blink.");
       }
     }
 
@@ -925,66 +969,102 @@ function BlinkCalibrationScreen({
   const ready = blinkCount >= 3;
 
   return (
-    <section className="w-full max-w-5xl animate-fade-in text-center" aria-label="Blink Calibration">
-      <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+    <section
+      className="flex min-h-0 w-full max-w-6xl flex-1 flex-col text-center"
+      aria-label="Blink Calibration"
+    >
+      <p className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
         Calibration
       </p>
-      <h1 className="font-display text-3xl font-semibold md:text-5xl">Blink Calibration</h1>
-      <p className="mx-auto mt-4 max-w-lg text-lg text-muted-foreground">
+      <h1 className="font-display text-3xl font-semibold md:text-4xl">Blink Calibration</h1>
+      <p className="mx-auto mt-2 max-w-lg text-base text-muted-foreground">
         Look at the camera and blink normally. Communication starts automatically after 3 blinks.
       </p>
 
-      <div className="relative mx-auto mt-8 aspect-video w-full overflow-hidden rounded-lg border-2 border-border bg-[#0d1424]">
-        <video
-          ref={videoRef}
-          muted
-          playsInline
-          className="absolute inset-0 h-full w-full object-cover"
-          aria-label="Camera preview"
-        />
-        {cameraError && (
-          <div className="absolute inset-0 grid place-items-center px-6 text-center">
-            <p className="text-sm text-white/70">{cameraError}</p>
-          </div>
-        )}
-      </div>
-
-      <div className="mx-auto mt-8 max-w-md rounded-lg border border-border bg-card p-6 shadow-sm">
-        <p className={cn(
-          "font-display text-3xl font-semibold",
-          advancing || blinkDetected ? "text-success" : "text-foreground",
-        )}>
-          {advancing ? "Calibration complete ✓" : blinkDetected ? "Blink detected ✓" : "Waiting for blink..."}
-        </p>
-        <p className="mt-3 text-sm text-muted-foreground">
-          {advancing ? "Starting communication..." : `Blink count: ${blinkCount} / 3`}
-        </p>
-        <div className="mt-5 grid grid-cols-3 gap-2" aria-hidden="true">
-          {[0, 1, 2].map((step) => (
-            <span
-              key={step}
-              className={cn(
-                "h-2 rounded-full transition-colors",
-                blinkCount > step ? "bg-success" : "bg-muted",
-              )}
+      {/* Camera on the left sized by the AVAILABLE HEIGHT (not the width), so
+          the whole screen always fits without scrolling; status + actions in
+          a column on the right. Stacks on narrow screens. */}
+      <div className="mt-4 flex max-h-[58vh] min-h-0 min-w-0 flex-1 flex-col gap-4 md:flex-row md:items-stretch">
+        <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center">
+          <div className="relative aspect-video h-full max-h-full w-auto max-w-full origin-center transform-gpu animate-in fade-in zoom-in-50 duration-700 overflow-hidden rounded-lg border-2 border-border bg-[#0d1424] motion-reduce:animate-none">
+            <video
+              ref={videoRef}
+              muted
+              playsInline
+              className="absolute inset-0 h-full w-full object-cover"
+              aria-label="Camera preview"
             />
-          ))}
+            {cameraError && (
+              <div className="absolute inset-0 grid place-items-center px-6 text-center">
+                <p className="text-sm text-white/70">{cameraError}</p>
+              </div>
+            )}
+          </div>
         </div>
-        <p className="mt-2 font-mono text-[11px] text-muted-foreground">
-          patient: {patient.patientId} · session: {session.id}
-        </p>
-      </div>
 
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
-        <Button size="lg" variant="outline" onClick={retry} disabled={advancing}>
-          Retry
-        </Button>
-        <Button size="lg" variant="outline" onClick={() => finishCalibration(blinkCount)} disabled={advancing}>
-          Skip Calibration
-        </Button>
-        <Button size="lg" disabled={!ready || advancing} onClick={() => finishCalibration(blinkCount)}>
-          {advancing ? "Starting..." : "Continue"}
-        </Button>
+        <div className="flex min-w-0 shrink-0 flex-col justify-center gap-4 md:w-72 md:max-w-72">
+          <div className="rounded-lg border border-border bg-card p-5 shadow-sm">
+            <p
+              className={cn(
+                "font-display text-2xl font-semibold",
+                advancing || blinkDetected ? "text-success" : "text-foreground",
+              )}
+            >
+              {advancing ? (
+                "Calibration complete ✓"
+              ) : blinkDetected ? (
+                "Blink detected ✓"
+              ) : (
+                <span
+                  className="inline-flex items-center justify-center gap-3"
+                  role="status"
+                  aria-label="Waiting for blink"
+                >
+                  <span>Waiting for blink</span>
+                  <span className="calibration-loader" aria-hidden="true" />
+                </span>
+              )}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {advancing ? "Starting communication..." : `Blink count: ${blinkCount} / 3`}
+            </p>
+            <div className="mt-4 grid grid-cols-3 gap-2" aria-hidden="true">
+              {[0, 1, 2].map((step) => (
+                <span
+                  key={step}
+                  className={cn(
+                    "h-2 rounded-full transition-colors",
+                    blinkCount > step ? "bg-success" : "bg-muted",
+                  )}
+                />
+              ))}
+            </div>
+            <p className="mt-2 break-all font-mono text-[11px] leading-snug text-muted-foreground">
+              patient: {patient.patientId} · session: {session.id}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Button size="lg" variant="outline" onClick={retry} disabled={advancing}>
+              Retry
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => finishCalibration(blinkCount)}
+              disabled={advancing}
+            >
+              Skip Calibration
+            </Button>
+            <Button
+              size="lg"
+              disabled={!ready || advancing}
+              onClick={() => finishCalibration(blinkCount)}
+            >
+              {advancing ? "Starting..." : "Continue"}
+            </Button>
+          </div>
+        </div>
       </div>
     </section>
   );
@@ -1087,18 +1167,11 @@ function YesNoCommunicationScreen({
   }
 
   return (
-    <section className="w-full max-w-5xl animate-fade-in" aria-label="Yes or no communication">
-      <div className="mx-auto max-w-3xl text-center">
-        <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-          Communication
-        </p>
-        <h1 className="font-display text-3xl font-semibold md:text-5xl">Yes / No</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Type the question, then use blink selection or spacebar to choose the highlighted answer.
-        </p>
-      </div>
-
-      <div className="mx-auto mt-7 grid max-w-4xl gap-4 rounded-lg border border-border bg-card p-5 shadow-sm md:grid-cols-[1fr_12rem] md:p-6">
+    <section
+      className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col animate-fade-in"
+      aria-label="Yes or no communication"
+    >
+      <div className="mt-4 grid w-full gap-4 rounded-lg border border-border bg-card p-4 shadow-sm md:grid-cols-[1fr_12rem] md:p-5">
         <PromptSuggestionInput
           label="Question"
           value={question}
@@ -1132,7 +1205,7 @@ function YesNoCommunicationScreen({
         </label>
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid min-h-0 flex-1 auto-rows-fr gap-3 sm:grid-cols-2">
         {options.map((option, optionIndex) => {
           const active = canScan && highlightedIndex === optionIndex;
           const selected = selectedResponse === option.value;
@@ -1140,7 +1213,7 @@ function YesNoCommunicationScreen({
             <div
               key={option.value}
               className={cn(
-                "relative min-h-52 rounded-lg border-2 bg-card text-center shadow-sm transition md:min-h-72",
+                "relative flex min-h-28 flex-col rounded-lg border-2 bg-card text-center shadow-sm transition",
                 active
                   ? "scale-[1.02] border-primary bg-primary text-primary-foreground shadow-lg"
                   : "border-border text-foreground hover:border-primary/60",
@@ -1155,7 +1228,7 @@ function YesNoCommunicationScreen({
                   void chooseResponse(option);
                 }}
                 disabled={saving || Boolean(selectedResponse)}
-                className="flex min-h-52 w-full flex-col items-center justify-center px-5 py-8 focus:outline-none focus:ring-4 focus:ring-primary/25 md:min-h-72"
+                className="flex h-full w-full flex-col items-center justify-center px-5 py-4 focus:outline-none focus:ring-4 focus:ring-primary/25"
                 aria-pressed={selected}
               >
                 <span className="block font-display text-6xl font-semibold md:text-8xl">
@@ -1189,7 +1262,7 @@ function YesNoCommunicationScreen({
         </p>
       )}
 
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         <Button variant="outline" size="lg" onClick={askAnotherQuestion}>
           Ask Another Question
         </Button>
@@ -1273,7 +1346,8 @@ function CommunicationStageScreen({
   onRefreshQuestionSuggestions: (patient: Patient, session: Session) => Promise<void>;
 }) {
   const [mode, setMode] = useState<CommunicationMode>("option_board");
-  const [selectedSuggestedQuestion, setSelectedSuggestedQuestion] = useState<SuggestedQuestion | null>(null);
+  const [selectedSuggestedQuestion, setSelectedSuggestedQuestion] =
+    useState<SuggestedQuestion | null>(null);
 
   function selectSuggestion(suggestion: SuggestedQuestion) {
     setSelectedSuggestedQuestion(suggestion);
@@ -1296,22 +1370,53 @@ function CommunicationStageScreen({
   }
 
   return (
-    <section className="w-full max-w-6xl animate-fade-in" aria-label="Communication">
-      <div className="mb-6 flex flex-wrap items-center justify-center gap-3">
-        <Button
-          type="button"
-          variant={mode === "option_board" ? "secondary" : "outline"}
-          onClick={() => setMode("option_board")}
-        >
-          6-Option Board
-        </Button>
-        <Button
-          type="button"
-          variant={mode === "yes_no" ? "secondary" : "outline"}
-          onClick={() => setMode("yes_no")}
-        >
-          Yes / No
-        </Button>
+    <section
+      className="flex min-h-0 w-full max-w-6xl flex-1 flex-col animate-fade-in"
+      aria-label="Communication"
+    >
+      {/* Shared heading for both boards, then the board picker as a
+          segmented control — title first so the mode switch reads as a
+          sub-choice of "Communication", not as something above it. */}
+      <div className="mx-auto max-w-3xl text-center">
+        <p className="mb-2 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
+          Communication
+        </p>
+        <h1 className="font-display text-3xl font-semibold md:text-4xl">
+          {mode === "option_board" ? "6-Option Board" : "Yes / No"}
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {mode === "option_board"
+            ? "Type a prompt, then use blink selection or spacebar to choose the highlighted option."
+            : "Type the question, then use blink selection or spacebar to choose the highlighted answer."}
+        </p>
+      </div>
+      <div
+        role="tablist"
+        aria-label="Board type"
+        className="mx-auto mt-3 inline-flex rounded-lg border border-border bg-card p-1 shadow-sm"
+      >
+        {(
+          [
+            { value: "option_board", label: "6-Option Board" },
+            { value: "yes_no", label: "Yes / No" },
+          ] as const
+        ).map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            role="tab"
+            aria-selected={mode === tab.value}
+            onClick={() => setMode(tab.value)}
+            className={cn(
+              "rounded-md px-4 py-1.5 text-sm font-semibold transition-colors",
+              mode === tab.value
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
       {mode === "option_board" ? (
@@ -1475,7 +1580,12 @@ function SuggestedQuestionsPanel({
             Gemini suggests drafts only. The clinician chooses, edits, or ignores them.
           </p>
         </div>
-        <Button type="button" variant="outline" disabled={state.loading} onClick={() => void onRegenerate()}>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={state.loading}
+          onClick={() => void onRegenerate()}
+        >
           {state.loading ? "Loading..." : "Regenerate"}
         </Button>
       </div>
@@ -1580,7 +1690,8 @@ function OptionBoardCommunicationScreen({
     setError(null);
   }, [selectedQuestion]);
 
-  const canScan = !selectedOption && prompt.trim().length > 0 && !saving && editingOptionIndex === null;
+  const canScan =
+    !selectedOption && prompt.trim().length > 0 && !saving && editingOptionIndex === null;
 
   const chooseOption = useCallback(
     async (option: ScanOption<string>) => {
@@ -1641,18 +1752,11 @@ function OptionBoardCommunicationScreen({
   }
 
   return (
-    <div className="w-full" aria-label="Six option communication board">
-      <div className="mx-auto max-w-3xl text-center">
-        <p className="mb-3 text-sm font-semibold uppercase tracking-[0.18em] text-primary">
-          Communication
-        </p>
-        <h1 className="font-display text-3xl font-semibold md:text-5xl">6-Option Board</h1>
-        <p className="mt-3 text-sm text-muted-foreground">
-          Type a prompt, then use blink selection or spacebar to choose the highlighted option.
-        </p>
-      </div>
-
-      <div className="mx-auto mt-7 grid max-w-4xl gap-4 rounded-lg border border-border bg-card p-5 shadow-sm md:grid-cols-[1fr_12rem] md:p-6">
+    <div
+      className="flex min-h-0 w-full flex-1 flex-col"
+      aria-label="Six option communication board"
+    >
+      <div className="mt-4 grid w-full gap-4 rounded-lg border border-border bg-card p-4 shadow-sm md:grid-cols-[1fr_12rem] md:p-5">
         <PromptSuggestionInput
           label="Prompt"
           value={prompt}
@@ -1685,7 +1789,7 @@ function OptionBoardCommunicationScreen({
         </label>
       </div>
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-4 grid min-h-0 flex-1 auto-rows-fr gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {options.map((option, optionIndex) => {
           const active = canScan && highlightedIndex === optionIndex;
           const selected = selectedOption === option.value;
@@ -1695,7 +1799,7 @@ function OptionBoardCommunicationScreen({
             <div
               key={`${option.value}-${optionIndex}`}
               className={cn(
-                "relative min-h-40 rounded-lg border-2 bg-card text-center shadow-sm transition",
+                "relative flex min-h-24 flex-col rounded-lg border-2 bg-card text-center shadow-sm transition",
                 active
                   ? "scale-[1.02] border-primary bg-primary text-primary-foreground shadow-lg"
                   : "border-border text-foreground hover:border-primary/60",
@@ -1719,7 +1823,7 @@ function OptionBoardCommunicationScreen({
                 </button>
               )}
               {editing ? (
-                <div className="flex min-h-40 items-center px-5 py-8">
+                <div className="flex flex-1 items-center px-5 py-4">
                   <input
                     autoFocus
                     value={boardOptions[optionIndex] ?? ""}
@@ -1749,7 +1853,7 @@ function OptionBoardCommunicationScreen({
                     void chooseOption(option);
                   }}
                   disabled={saving || Boolean(selectedOption)}
-                  className="flex min-h-40 w-full flex-col items-center justify-center px-5 py-8 focus:outline-none focus:ring-4 focus:ring-primary/25"
+                  className="flex h-full w-full flex-col items-center justify-center px-5 py-4 focus:outline-none focus:ring-4 focus:ring-primary/25"
                   aria-pressed={selected}
                 >
                   <span className="block font-display text-3xl font-semibold md:text-4xl">
@@ -1784,7 +1888,7 @@ function OptionBoardCommunicationScreen({
         </p>
       )}
 
-      <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         <Button variant="outline" size="lg" onClick={scanAgain}>
           Ask Another Prompt
         </Button>
@@ -1831,7 +1935,7 @@ function BlinkKeyboardCommunicationScreen({
         ? KEYBOARD_LAYOUT
         : selectedRowIndex === null
           ? []
-          : KEYBOARD_LAYOUT[selectedRowIndex] ?? [];
+          : (KEYBOARD_LAYOUT[selectedRowIndex] ?? []);
 
   useEffect(() => {
     const typedText = message.replace(/\s+/g, " ").trim();
@@ -1843,12 +1947,7 @@ function BlinkKeyboardCommunicationScreen({
       return;
     }
 
-    const cacheKey = [
-      patient.id,
-      session.id,
-      clinicianQuestion,
-      typedText.toLowerCase(),
-    ].join("|");
+    const cacheKey = [patient.id, session.id, clinicianQuestion, typedText.toLowerCase()].join("|");
     const cached = suggestionCacheRef.current.get(cacheKey);
     if (cached) {
       setSuggestions(cached);
@@ -1872,11 +1971,13 @@ function BlinkKeyboardCommunicationScreen({
       setSuggestionLoading(true);
       setSuggestionError(null);
       buildSuggestedQuestionContext(patient, session)
-        .then((context) => generateKeyboardCompletions({
-          ...context,
-          typedText,
-          clinicianQuestion,
-        }))
+        .then((context) =>
+          generateKeyboardCompletions({
+            ...context,
+            typedText,
+            clinicianQuestion,
+          }),
+        )
         .then((response) => {
           if (cancelled) return;
           suggestionCacheRef.current.set(cacheKey, response.completions);
@@ -1996,13 +2097,7 @@ function BlinkKeyboardCommunicationScreen({
       setScanMode("ROWS");
       setSelectedRowIndex(null);
     },
-    [
-      completeMessage,
-      message,
-      scanMode,
-      selectedRowIndex,
-      suggestionScanItems,
-    ],
+    [completeMessage, message, scanMode, selectedRowIndex, suggestionScanItems],
   );
 
   const { currentScanIndex, setCurrentScanIndex } = useScanController({
@@ -2010,17 +2105,18 @@ function BlinkKeyboardCommunicationScreen({
     active: !saving,
     intervalMs: scanIntervalMs,
     onSelect: selectCurrentItem,
-    onCycleEnd: scanMode === "SUGGESTIONS"
-      ? () => {
-          setScanMode("ROWS");
-          setSelectedRowIndex(null);
-        }
-      : scanMode === "ROWS" && suggestionScanItems.length > 0
+    onCycleEnd:
+      scanMode === "SUGGESTIONS"
         ? () => {
-            setScanMode("SUGGESTIONS");
+            setScanMode("ROWS");
             setSelectedRowIndex(null);
           }
-      : undefined,
+        : scanMode === "ROWS" && suggestionScanItems.length > 0
+          ? () => {
+              setScanMode("SUGGESTIONS");
+              setSelectedRowIndex(null);
+            }
+          : undefined,
   });
 
   useEffect(() => {
@@ -2028,7 +2124,10 @@ function BlinkKeyboardCommunicationScreen({
   }, [scanMode, selectedRowIndex, setCurrentScanIndex]);
 
   return (
-    <section className="w-full max-w-[76rem] animate-fade-in lg:-mt-10" aria-label="Blink keyboard communication">
+    <section
+      className="w-full max-w-[76rem] animate-fade-in lg:-mt-10"
+      aria-label="Blink keyboard communication"
+    >
       <div className="grid gap-5 lg:grid-cols-[23rem_minmax(0,1fr)] lg:items-stretch">
         <div className="flex min-h-[28rem] flex-col rounded-lg border border-border bg-card p-5 shadow-sm">
           <div>
@@ -2092,9 +2191,7 @@ function BlinkKeyboardCommunicationScreen({
               <Button variant="outline" onClick={onBack}>
                 Back to Board
               </Button>
-              <Button onClick={onContinue}>
-                Continue
-              </Button>
+              <Button onClick={onContinue}>Continue</Button>
             </div>
           </div>
         </div>
@@ -2172,10 +2269,16 @@ function BlinkKeyboardCommunicationScreen({
                           rowKeyActive
                             ? "scale-[1.01] border-primary bg-primary text-primary-foreground shadow-lg"
                             : keyActive
-                            ? "scale-[1.03] border-primary bg-primary text-primary-foreground shadow-lg"
-                            : "border-border",
-                          keyValue === "DONE" && !rowKeyActive && !keyActive && "border-success/50 bg-success/10 text-success",
-                          keyValue === "CLEAR" && !rowKeyActive && !keyActive && "border-destructive/40 bg-destructive/10 text-destructive",
+                              ? "scale-[1.03] border-primary bg-primary text-primary-foreground shadow-lg"
+                              : "border-border",
+                          keyValue === "DONE" &&
+                            !rowKeyActive &&
+                            !keyActive &&
+                            "border-success/50 bg-success/10 text-success",
+                          keyValue === "CLEAR" &&
+                            !rowKeyActive &&
+                            !keyActive &&
+                            "border-destructive/40 bg-destructive/10 text-destructive",
                         )}
                         aria-current={keyActive ? "true" : undefined}
                         aria-label={keyValue === "BACKSPACE" ? "Backspace" : keyValue}
@@ -2383,7 +2486,8 @@ function SessionSummaryScreen({
                   </div>
                   {interaction.question && (
                     <p className="mt-3 text-sm text-muted-foreground">
-                      Question: <span className="font-medium text-foreground">{interaction.question}</span>
+                      Question:{" "}
+                      <span className="font-medium text-foreground">{interaction.question}</span>
                     </p>
                   )}
                   <p className="mt-2 text-base font-semibold text-foreground">
@@ -2485,14 +2589,14 @@ function WorkflowPlaceholder({
         {eyebrow}
       </p>
       <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
-        <h1 className="font-display text-3xl font-semibold md:text-5xl">
-          {title}
-        </h1>
+        <h1 className="font-display text-3xl font-semibold md:text-5xl">{title}</h1>
         <p className="mx-auto mt-4 max-w-lg text-sm leading-relaxed text-muted-foreground">
           {body}
         </p>
         <div className="mx-auto mt-6 grid w-fit gap-1 rounded-md border border-border bg-background px-4 py-3 font-mono text-xs text-muted-foreground">
-          <span>patient: {patient.name} ({patient.patientId})</span>
+          <span>
+            patient: {patient.name} ({patient.patientId})
+          </span>
           <span>session: {session.id}</span>
           <span>{detail}</span>
         </div>
@@ -2547,7 +2651,7 @@ function CameraCheck({ onDone }: { onDone: () => void }) {
         Position the camera so the patient’s face is clearly visible, then continue.
       </p>
 
-      <div className="relative mx-auto mt-8 aspect-video w-full overflow-hidden rounded-lg border-2 border-border bg-[#0d1424]">
+      <div className="relative mx-auto mt-8 aspect-video w-full origin-center transform-gpu animate-in fade-in zoom-in-50 duration-700 overflow-hidden rounded-lg border-2 border-border bg-[#0d1424] motion-reduce:animate-none">
         <video
           ref={videoRef}
           muted

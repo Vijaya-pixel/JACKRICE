@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useSyncExternalStore } from "react";
 
 import type {
   TacitCalibrationPhase,
   TacitCalibrationResult,
+  TacitEngineEvent,
   TacitEyeState,
   TacitGazeCalibrationPhase,
   TacitGazeDirection,
@@ -80,97 +81,7 @@ const IDLE: EngineDiagnostics = {
  * caller is expected to fall back to its own mock/simulated values then.
  */
 export function useEngineDiagnostics() {
-  const [state, setState] = useState<EngineDiagnostics>(IDLE);
-  const warningsRef = useRef<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!window.tacit) return;
-    const unsubscribe = window.tacit.onEngineEvent((event) => {
-      setState((current) => {
-        const next: EngineDiagnostics = {
-          ...current,
-          available: true,
-          sessionStartedAt: current.sessionStartedAt ?? Date.now(),
-          lastEventAt: Date.now(),
-        };
-        switch (event.type) {
-          case "status":
-            if (event.payload.phase === "error") {
-              next.status = "error";
-              next.lastError = event.payload.message;
-            } else if (event.payload.phase === "running") {
-              next.status = "running";
-              next.lastError = null;
-            } else if (current.status !== "running") {
-              next.status = "starting";
-            }
-            break;
-          case "error":
-            next.status = "error";
-            next.lastError = event.payload.error.message;
-            break;
-          case "calibration":
-            next.calibration = event.payload.phase;
-            if (event.payload.result) next.calibrationResult = event.payload.result;
-            break;
-          case "gazeCalibration":
-            next.gazeCalibration = event.payload.phase;
-            if (event.payload.center != null) next.gazeCenter = event.payload.center;
-            break;
-          case "vitalsCalibration":
-            next.vitalsCalibration = event.payload.phase;
-            next.vitalsConfidence = {
-              pulse: event.payload.pulseConfidence,
-              breathing: event.payload.breathingConfidence,
-            };
-            break;
-          case "frame":
-            next.eye = event.payload.eye;
-            next.gaze = event.payload.gaze;
-            next.face = event.payload.face;
-            next.degraded = event.payload.degraded;
-            if (event.payload.signal != null) {
-              next.signalHistory = [...current.signalHistory, event.payload.signal].slice(
-                -SIGNAL_HISTORY_LENGTH,
-              );
-            }
-            break;
-          case "gaze":
-            next.gaze = event.payload.direction;
-            break;
-          case "warning":
-            if (event.payload.active)
-              warningsRef.current[event.payload.code] = event.payload.message;
-            else delete warningsRef.current[event.payload.code];
-            next.warnings = Object.values(warningsRef.current);
-            next.warningCodes = Object.keys(warningsRef.current);
-            break;
-          case "vitals":
-            next.vitals = {
-              pulseBpm: event.payload.pulseBpm,
-              breathingBpm: event.payload.breathingBpm,
-            };
-            break;
-          case "select":
-            next.selectCount = current.selectCount + 1;
-            break;
-          case "ambiguous":
-            next.ambiguousCount = current.ambiguousCount + 1;
-            break;
-          case "facelost":
-            next.face = false;
-            break;
-          case "faceback":
-            next.face = true;
-            break;
-          default:
-            break;
-        }
-        return next;
-      });
-    });
-    return unsubscribe;
-  }, []);
+  const state = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 
   const calibrate = () => window.tacit?.sendEngineControl({ type: "calibrate" });
   const calibrateGaze = () => window.tacit?.sendEngineControl({ type: "calibrateGaze" });
@@ -178,4 +89,130 @@ export function useEngineDiagnostics() {
     window.tacit?.sendEngineControl({ type: "setEyeTracking", enabled });
 
   return { ...state, calibrate, calibrateGaze, setEyeTracking };
+}
+
+// --- Shared store -----------------------------------------------------------
+// ONE subscription to the engine for the whole app, kept for its lifetime.
+// Every hook instance reads the same snapshot, so a component that mounts
+// later (the vitals panel on the communication screen, a header re-mounted
+// by a route change) sees the current state — status, vitals, face — the
+// instant it renders, instead of starting blank and waiting for events that
+// already happened (e.g. `status: running`, which fires exactly once at
+// launch and would otherwise never be seen by late mounters).
+
+let snapshot: EngineDiagnostics = IDLE;
+const activeWarnings: Record<string, string> = {};
+const listeners = new Set<() => void>();
+let engineSubscribed = false;
+
+function getSnapshot() {
+  return snapshot;
+}
+function getServerSnapshot() {
+  return IDLE;
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  ensureEngineSubscription();
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function ensureEngineSubscription() {
+  if (engineSubscribed || typeof window === "undefined" || !window.tacit) return;
+  engineSubscribed = true;
+  window.tacit.onEngineEvent((event) => {
+    snapshot = reduce(snapshot, event);
+    for (const listener of listeners) listener();
+  });
+}
+
+function reduce(current: EngineDiagnostics, event: TacitEngineEvent): EngineDiagnostics {
+  const next: EngineDiagnostics = {
+    ...current,
+    available: true,
+    sessionStartedAt: current.sessionStartedAt ?? Date.now(),
+    lastEventAt: Date.now(),
+  };
+  // Frames/vitals/etc. only ever come from a running engine, so any such
+  // event is proof of "running" — needed because the one-off
+  // `status: running` at launch can fire before React has subscribed.
+  if (event.type !== "status" && event.type !== "error" && current.status !== "error") {
+    next.status = "running";
+  }
+  switch (event.type) {
+    case "status":
+      if (event.payload.phase === "error") {
+        next.status = "error";
+        next.lastError = event.payload.message;
+      } else if (event.payload.phase === "running") {
+        next.status = "running";
+        next.lastError = null;
+      } else if (current.status !== "running") {
+        next.status = "starting";
+      }
+      break;
+    case "error":
+      next.status = "error";
+      next.lastError = event.payload.error.message;
+      break;
+    case "calibration":
+      next.calibration = event.payload.phase;
+      if (event.payload.result) next.calibrationResult = event.payload.result;
+      break;
+    case "gazeCalibration":
+      next.gazeCalibration = event.payload.phase;
+      if (event.payload.center != null) next.gazeCenter = event.payload.center;
+      break;
+    case "vitalsCalibration":
+      next.vitalsCalibration = event.payload.phase;
+      next.vitalsConfidence = {
+        pulse: event.payload.pulseConfidence,
+        breathing: event.payload.breathingConfidence,
+      };
+      break;
+    case "frame":
+      next.eye = event.payload.eye;
+      next.gaze = event.payload.gaze;
+      next.face = event.payload.face;
+      next.degraded = event.payload.degraded;
+      if (event.payload.signal != null) {
+        next.signalHistory = [...current.signalHistory, event.payload.signal].slice(
+          -SIGNAL_HISTORY_LENGTH,
+        );
+      }
+      break;
+    case "gaze":
+      next.gaze = event.payload.direction;
+      break;
+    case "warning":
+      if (event.payload.active) activeWarnings[event.payload.code] = event.payload.message;
+      else delete activeWarnings[event.payload.code];
+      next.warnings = Object.values(activeWarnings);
+      next.warningCodes = Object.keys(activeWarnings);
+      break;
+    case "vitals":
+      next.vitals = {
+        pulseBpm: event.payload.pulseBpm,
+        breathingBpm: event.payload.breathingBpm,
+      };
+      break;
+    case "select":
+      next.selectCount = current.selectCount + 1;
+      break;
+    case "ambiguous":
+      next.ambiguousCount = current.ambiguousCount + 1;
+      break;
+    case "facelost":
+      next.face = false;
+      break;
+    case "faceback":
+      next.face = true;
+      break;
+    default:
+      break;
+  }
+  return next;
 }

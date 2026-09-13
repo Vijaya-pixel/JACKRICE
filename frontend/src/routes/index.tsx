@@ -30,7 +30,7 @@ function HomePage() {
       <SiteHeader />
 
       <div className="machine-display mx-auto flex w-full max-w-[1500px] flex-1 flex-col justify-center px-5 py-8 md:px-8">
-        <section className="mx-auto max-w-2xl text-center">
+        <section className="page-copy-reveal mx-auto max-w-2xl text-center">
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-primary">
             giving voice back
           </p>
@@ -45,14 +45,14 @@ function HomePage() {
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/app"
-              className="inline-flex items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground transition-colors hover:bg-cta/85"
+              className="inline-flex animate-in fade-in slide-in-from-left-8 fill-mode-both items-center gap-2 rounded-[10px_4px_10px_4px] bg-cta px-7 py-3 text-sm font-semibold uppercase tracking-widest text-cta-foreground duration-700 ease-out transition-colors hover:bg-cta/85 motion-reduce:animate-none"
             >
               Try the Prototype
               <span aria-hidden="true">→</span>
             </Link>
             <Link
               to="/how-it-works"
-              className="inline-flex items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground transition-colors hover:bg-foreground hover:text-background"
+              className="inline-flex animate-in fade-in slide-in-from-right-8 fill-mode-both items-center gap-2 rounded-[3px_12px_3px_12px] border-2 border-foreground/80 px-6 py-[11px] text-sm font-semibold uppercase tracking-widest text-foreground duration-700 ease-out transition-colors hover:bg-foreground hover:text-background motion-reduce:animate-none"
             >
               Watch Demo
               <span aria-hidden="true">▶</span>

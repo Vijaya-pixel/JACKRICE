@@ -1,6 +1,7 @@
 import { Activity, AlertTriangle, HeartPulse, MessageSquareText, Wind } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { RevealOnView } from "@/components/reveal-on-view";
 import { useEngineDiagnostics } from "@/hooks/useEngineDiagnostics";
 import { LAST_SELECTION_STORAGE_KEY } from "@/lib/tacit-api";
 import { cn } from "@/lib/utils";
@@ -295,7 +296,7 @@ export function ClinicianView() {
   const thresholdLabelTop = Math.min(88, Math.max(6, (thresholdY / 240) * 100));
 
   return (
-    <div className="min-h-svh px-5 pb-20 pt-24 md:px-10">
+    <div className="page-copy-reveal min-h-svh px-5 pb-20 pt-24 md:px-10">
       <div className="mx-auto max-w-[1450px]">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div>
@@ -337,7 +338,7 @@ export function ClinicianView() {
           </div>
         )}
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-          <section className="rounded-lg border border-border bg-card p-4 md:p-6">
+          <section className="origin-center transform-gpu animate-in fade-in zoom-in-50 duration-1000 rounded-lg border border-border bg-card p-4 md:p-6 motion-reduce:animate-none">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
                 <h2 className="font-display text-xl font-semibold">Eye aspect ratio</h2>
@@ -402,73 +403,81 @@ export function ClinicianView() {
                 Live
               </p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-                <section className="rounded-lg border border-border bg-card p-5 sm:col-span-2 lg:col-span-1">
-                  <div className="mb-4 flex items-center justify-between gap-2">
-                    <h2 className="font-semibold">Vitals</h2>
-                    {vitalsLabel && (
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-amber">
-                        <span className="size-1.5 rounded-full bg-amber motion-safe:animate-pulse" />
-                        {vitalsLabel}
-                      </span>
+                <RevealOnView className="sm:col-span-2 lg:col-span-1">
+                  <section className="rounded-lg border border-border bg-card p-5">
+                    <div className="mb-4 flex items-center justify-between gap-2">
+                      <h2 className="font-semibold">Vitals</h2>
+                      {vitalsLabel && (
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-amber">
+                          <span className="size-1.5 rounded-full bg-amber motion-safe:animate-pulse" />
+                          {vitalsLabel}
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center gap-3">
+                        <HeartPulse className="size-5 shrink-0 text-primary" />
+                        <div>
+                          <p className="text-2xl font-semibold tabular-nums leading-none">
+                            {vitalsReady ? formatBpm(vitals.pulseBpm) : "—"}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">bpm pulse</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <Wind className="size-5 shrink-0 text-primary" />
+                        <div>
+                          <p className="text-2xl font-semibold tabular-nums leading-none">
+                            {vitalsReady ? formatBpm(vitals.breathingBpm) : "—"}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">breaths/min</p>
+                        </div>
+                      </div>
+                    </div>
+                    {vitalsReady && (
+                      <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3">
+                        <p className="text-xs text-muted-foreground">Pulse trend</p>
+                        <Sparkline points={pulseTrend} className="text-primary" />
+                      </div>
                     )}
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center gap-3">
-                      <HeartPulse className="size-5 shrink-0 text-primary" />
-                      <div>
-                        <p className="text-2xl font-semibold tabular-nums leading-none">
-                          {vitalsReady ? formatBpm(vitals.pulseBpm) : "—"}
+                  </section>
+                </RevealOnView>
+                <RevealOnView>
+                  <AlertMetric
+                    title="False activations"
+                    value={String(falseActivations)}
+                    detail={activationDetail}
+                    tone={activationSeverity}
+                    trend={falseActivationTrend}
+                  />
+                </RevealOnView>
+                <RevealOnView>
+                  <Metric
+                    title="Confirmed selections"
+                    value={confirmedSelections}
+                    detail="Current session"
+                  />
+                </RevealOnView>
+                <RevealOnView className="sm:col-span-2 lg:col-span-1">
+                  <section className="rounded-lg border border-border bg-card p-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <MessageSquareText className="size-4 text-primary" />
+                      <h2 className="font-semibold">Last selection</h2>
+                    </div>
+                    {lastSelection ? (
+                      <>
+                        <p className="truncate text-xl font-semibold" title={lastSelection.text}>
+                          “{lastSelection.text}”
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">bpm pulse</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Wind className="size-5 shrink-0 text-primary" />
-                      <div>
-                        <p className="text-2xl font-semibold tabular-nums leading-none">
-                          {vitalsReady ? formatBpm(vitals.breathingBpm) : "—"}
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {formatAgo(lastSelection.t, now)} · via {lastSelection.how}
                         </p>
-                        <p className="mt-1 text-xs text-muted-foreground">breaths/min</p>
-                      </div>
-                    </div>
-                  </div>
-                  {vitalsReady && (
-                    <div className="mt-4 flex items-center justify-between border-t border-border/60 pt-3">
-                      <p className="text-xs text-muted-foreground">Pulse trend</p>
-                      <Sparkline points={pulseTrend} className="text-primary" />
-                    </div>
-                  )}
-                </section>
-                <AlertMetric
-                  title="False activations"
-                  value={String(falseActivations)}
-                  detail={activationDetail}
-                  tone={activationSeverity}
-                  trend={falseActivationTrend}
-                />
-                <Metric
-                  title="Confirmed selections"
-                  value={confirmedSelections}
-                  detail="Current session"
-                />
-                <section className="rounded-lg border border-border bg-card p-5 sm:col-span-2 lg:col-span-1">
-                  <div className="mb-3 flex items-center gap-2">
-                    <MessageSquareText className="size-4 text-primary" />
-                    <h2 className="font-semibold">Last selection</h2>
-                  </div>
-                  {lastSelection ? (
-                    <>
-                      <p className="truncate text-xl font-semibold" title={lastSelection.text}>
-                        “{lastSelection.text}”
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatAgo(lastSelection.t, now)} · via {lastSelection.how}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No selection yet this session</p>
-                  )}
-                </section>
+                      </>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No selection yet this session</p>
+                    )}
+                  </section>
+                </RevealOnView>
               </div>
             </div>
             <div>
@@ -476,40 +485,44 @@ export function ClinicianView() {
                 Session
               </p>
               <div className="grid gap-4">
-                <section className="rounded-lg border border-border bg-card p-5">
-                  <div className="mb-4 flex items-center gap-2">
-                    <Activity className="size-4 text-primary" />
-                    <h2 className="font-semibold">Calibration values</h2>
-                  </div>
-                  <div className="mb-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-md bg-muted/50 p-3">
-                      <p className="text-xs text-muted-foreground">Baseline EAR</p>
-                      <p className="mt-1 text-2xl font-semibold tabular-nums">{baselineEar}</p>
+                <RevealOnView>
+                  <section className="rounded-lg border border-border bg-card p-5">
+                    <div className="mb-4 flex items-center gap-2">
+                      <Activity className="size-4 text-primary" />
+                      <h2 className="font-semibold">Calibration values</h2>
                     </div>
-                    <div className="rounded-md bg-muted/50 p-3">
-                      <p className="text-xs text-muted-foreground">Blink threshold</p>
-                      <p className="mt-1 text-2xl font-semibold tabular-nums text-threshold">
-                        {blinkThreshold}
-                      </p>
+                    <div className="mb-4 grid grid-cols-2 gap-3">
+                      <div className="rounded-md bg-muted/50 p-3">
+                        <p className="text-xs text-muted-foreground">Baseline EAR</p>
+                        <p className="mt-1 text-2xl font-semibold tabular-nums">{baselineEar}</p>
+                      </div>
+                      <div className="rounded-md bg-muted/50 p-3">
+                        <p className="text-xs text-muted-foreground">Blink threshold</p>
+                        <p className="mt-1 text-2xl font-semibold tabular-nums text-threshold">
+                          {blinkThreshold}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <dl className="space-y-3 text-sm">
-                    <DataRow label="Min. duration" value="180 ms" />
-                    <DataRow label="Scan interval" value="1500 ms" />
-                    <DataRow label="Signal confidence" value="96.8%" />
-                  </dl>
-                </section>
-                <section className="rounded-lg border border-border bg-card p-5">
-                  <h2 className="mb-3 font-semibold">Session</h2>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Elapsed</span>
-                    <span className="tabular-nums">{elapsed}</span>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Last input</span>
-                    <span>{lastInput}</span>
-                  </div>
-                </section>
+                    <dl className="space-y-3 text-sm">
+                      <DataRow label="Min. duration" value="180 ms" />
+                      <DataRow label="Scan interval" value="1500 ms" />
+                      <DataRow label="Signal confidence" value="96.8%" />
+                    </dl>
+                  </section>
+                </RevealOnView>
+                <RevealOnView>
+                  <section className="rounded-lg border border-border bg-card p-5">
+                    <h2 className="mb-3 font-semibold">Session</h2>
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Elapsed</span>
+                      <span className="tabular-nums">{elapsed}</span>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Last input</span>
+                      <span>{lastInput}</span>
+                    </div>
+                  </section>
+                </RevealOnView>
               </div>
             </div>
           </aside>
